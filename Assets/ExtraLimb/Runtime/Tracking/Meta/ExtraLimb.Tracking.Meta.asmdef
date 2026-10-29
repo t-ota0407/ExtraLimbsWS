@@ -1,0 +1,6 @@
+{
+  "name": "ExtraLimb.Tracking.Meta",
+  "rootNamespace": "ExtraLimb.Tracking.Meta",
+  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking", "Oculus.VR"],
+  "autoReferenced": true
+}

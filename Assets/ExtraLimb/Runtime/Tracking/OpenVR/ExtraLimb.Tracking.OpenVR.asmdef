@@ -1,0 +1,7 @@
+{
+  "name": "ExtraLimb.Tracking.OpenVR",
+  "rootNamespace": "ExtraLimb.Tracking.OpenVR",
+  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking"],
+  "includePlatforms": ["Editor", "WindowsStandalone64"],
+  "autoReferenced": true
+}

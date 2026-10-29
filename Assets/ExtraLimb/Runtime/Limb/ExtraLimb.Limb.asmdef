@@ -1,0 +1,6 @@
+{
+  "name": "ExtraLimb.Limb",
+  "rootNamespace": "ExtraLimb.Limb",
+  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking", "ExtraLimb.Body", "RootMotion"],
+  "autoReferenced": true
+}

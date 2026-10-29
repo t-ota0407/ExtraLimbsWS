@@ -1,0 +1,52 @@
+# Unity
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+!/[Aa]ssets/**/*.meta
+/[Aa]ssets/Plugins/Editor/JetBrains*
+
+# IDE
+.vs/
+.vscode/
+.idea/
+.gradle/
+ExportedObj/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Builds
+sysinfo.txt
+*.apk
+*.aab
+*.app
+crashlytics-build.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 実験データ（参加者の個人データを含むため、リポジトリに入れない）
+/ExperimentData/

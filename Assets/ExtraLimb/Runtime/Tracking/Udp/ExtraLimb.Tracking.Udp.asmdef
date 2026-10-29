@@ -1,0 +1,6 @@
+{
+  "name": "ExtraLimb.Tracking.Udp",
+  "rootNamespace": "ExtraLimb.Tracking.Udp",
+  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking"],
+  "autoReferenced": true
+}

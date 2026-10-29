@@ -1,0 +1,6 @@
+{
+  "name": "ExtraLimb.Experiment",
+  "rootNamespace": "ExtraLimb.Experiment",
+  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking", "ExtraLimb.Body", "ExtraLimb.Limb"],
+  "autoReferenced": true
+}
