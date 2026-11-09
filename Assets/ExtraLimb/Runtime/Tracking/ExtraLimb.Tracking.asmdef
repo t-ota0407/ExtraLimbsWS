@@ -1,6 +1,9 @@
 {
   "name": "ExtraLimb.Tracking",
   "rootNamespace": "ExtraLimb.Tracking",
-  "references": ["ExtraLimb.Core"],
+  "references": [
+    "ExtraLimb.Core",
+    "Unity.InputSystem"
+  ],
   "autoReferenced": true
 }
