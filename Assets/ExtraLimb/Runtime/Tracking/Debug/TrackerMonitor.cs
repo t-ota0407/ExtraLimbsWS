@@ -17,6 +17,9 @@ namespace ExtraLimb.Tracking
         [Tooltip("基準（腰）を描く位置（ワールド座標、m）。基準の向きはワールドの向きにそろえて描く")]
         [SerializeField] Vector3 vizOrigin = new Vector3(0f, 0.95f, 0f);
 
+        [Tooltip("立方体の並びの縮尺。HMDの中で目の前に小さく出すときは0.3〜0.5にする")]
+        [SerializeField] float vizScale = 1f;
+
         [SerializeField] float cubeSize = 0.05f;
         [SerializeField] bool showGui = true;
 
@@ -162,8 +165,8 @@ namespace ExtraLimb.Tracking
                 viz.transform.gameObject.SetActive(visible);
                 if (!visible) continue;
                 var local = NeutralPoseCalibrator.ToReferenceLocal(referencePose, pose);
-                viz.transform.SetPositionAndRotation(vizOrigin + local.position, local.rotation);
-                viz.transform.localScale = Vector3.one * (source.Id == referenceId || source.Id == inputId ? cubeSize * 1.4f : cubeSize);
+                viz.transform.SetPositionAndRotation(vizOrigin + local.position * vizScale, local.rotation);
+                viz.transform.localScale = Vector3.one * vizScale * (source.Id == referenceId || source.Id == inputId ? cubeSize * 1.4f : cubeSize);
             }
 
             bool showNeutral = hasDelta && calibrator.IsCalibrated;
@@ -171,10 +174,12 @@ namespace ExtraLimb.Tracking
             deltaLine.enabled = showNeutral;
             if (showNeutral)
             {
-                var neutral = vizOrigin + calibrator.NeutralLocalPose.position;
+                var neutral = vizOrigin + calibrator.NeutralLocalPose.position * vizScale;
                 neutralMarker.position = neutral;
+                neutralMarker.localScale = Vector3.one * cubeSize * 0.5f * vizScale;
                 deltaLine.SetPosition(0, neutral);
-                deltaLine.SetPosition(1, neutral + lastDelta.position);
+                deltaLine.SetPosition(1, neutral + lastDelta.position * vizScale);
+                deltaLine.startWidth = deltaLine.endWidth = 0.006f * Mathf.Max(vizScale, 0.5f);
             }
         }
 
