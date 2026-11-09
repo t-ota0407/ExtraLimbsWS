@@ -1,6 +1,12 @@
 {
   "name": "ExtraLimb.Experiment",
   "rootNamespace": "ExtraLimb.Experiment",
-  "references": ["ExtraLimb.Core", "ExtraLimb.Tracking", "ExtraLimb.Body", "ExtraLimb.Limb"],
+  "references": [
+    "ExtraLimb.Core",
+    "ExtraLimb.Tracking",
+    "ExtraLimb.Body",
+    "ExtraLimb.Limb",
+    "Unity.InputSystem"
+  ],
   "autoReferenced": true
 }

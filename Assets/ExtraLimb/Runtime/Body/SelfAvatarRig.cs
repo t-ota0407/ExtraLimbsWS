@@ -143,6 +143,8 @@ namespace ExtraLimb.Body
         {
             // 再生が5秒進んでも頭を追跡できなければ、原因を探すための情報を一度だけ出す
             if (headEverTracked || warnedNoHead || Time.time - enabledTime < 5f) return;
+            // 頭の入力ソースそのものがないシーン（DesktopDev など）では警告しない
+            if (registry == null || !registry.TryGet(headSourceId, out _)) return;
             warnedNoHead = true;
             Debug.LogWarning($"[ExtraLimb] 自分のアバター：5秒たっても頭を追跡できません（{StatusText}）");
         }
