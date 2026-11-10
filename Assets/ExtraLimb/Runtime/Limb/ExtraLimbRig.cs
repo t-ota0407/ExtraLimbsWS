@@ -26,6 +26,8 @@ namespace ExtraLimb.Limb
     /// Tポーズのときに体の向きとそろうように、起動時に骨の向きとの差を覚える。
     /// 手先の既定位置と肘の向きは、x を「外向きが正」で書き、左の肢では左右を反転して使う。
     /// どこからも動かされないフレームは、手首を既定位置に置く（モデルの初期姿勢のまま腕が突き出ないように）。
+    /// Attach Point を付け替えるときは LimbMountController が SetMountPose() で付け根の位置と根元の座標の向きを与える
+    /// （鎖骨の骨を動かして、上腕の付け根をその位置に置く。鎖骨には頂点がないので見た目は変わらない）。
     /// 実行順は VRIK（Final IK のインスペクタが 9998 に設定する）より後、LimbSession より前。
     /// </summary>
     [DefaultExecutionOrder(10000)]
@@ -69,6 +71,9 @@ namespace ExtraLimb.Limb
         Vector3 visibilityBoneScale = Vector3.one;
         int lastSolveFrame = -1;
         bool initialized;
+        bool mounted;
+        Quaternion mountFrameRotation = Quaternion.identity;
+        Vector3 mountRestHandPosition, mountBendHint;
 
         public LimbSide Side => side;
         public bool IsReady => initialized;
@@ -86,25 +91,38 @@ namespace ExtraLimb.Limb
         public Transform UpperArm => upperArm;
         public Transform Forearm => forearm;
         public Transform Hand => hand;
-        public float UpperLength { get; private set; }
-        public float LowerLength { get; private set; }
+
+        /// <summary>上腕の親（鎖骨）。付け替えではこの骨を動かす。</summary>
+        public Transform Clavicle => upperArm != null && upperArm.parent != null ? upperArm.parent : upperArm;
+
+        /// <summary>上腕の長さ（m、アバターの拡縮を含む）。</summary>
+        public float UpperLength => initialized ? Vector3.Distance(upperArm.position, forearm.position) : 0f;
+
+        /// <summary>前腕の長さ（m、アバターの拡縮を含む）。</summary>
+        public float LowerLength => initialized ? Vector3.Distance(forearm.position, hand.position) : 0f;
 
         /// <summary>腕の長さ（上腕＋前腕、m）。</summary>
         public float Reach => UpperLength + LowerLength;
 
+        /// <summary>この肢の付け根を動かす部品（なければモデルのままの位置）。</summary>
+        public LimbMountController Mount { get; internal set; }
+
+        /// <summary>SetMountPose() で付け根を与えられているか。</summary>
+        public bool IsMounted => mounted;
+
         /// <summary>手首の既定位置（根元の座標、左右反転済み）。</summary>
-        public Vector3 RestHandPosition => Mirror(restHandPosition);
+        public Vector3 RestHandPosition => Mirror(mounted ? mountRestHandPosition : restHandPosition);
 
         /// <summary>肘を向けたい点（根元の座標、左右反転済み）。</summary>
-        public Vector3 BendHint => Mirror(bendHint);
+        public Vector3 BendHint => Mirror(mounted ? mountBendHint : bendHint);
 
-        /// <summary>根元の座標の、ワールドでの姿勢。</summary>
+        /// <summary>根元の座標の、ワールドでの姿勢。原点は上腕の付け根。</summary>
         public Pose Frame
         {
             get
             {
                 if (!initialized) return new Pose(transform.position, transform.rotation);
-                return new Pose(upperArm.position, frameSource.rotation * frameOffset);
+                return new Pose(upperArm.position, mounted ? mountFrameRotation : frameSource.rotation * frameOffset);
             }
         }
 
@@ -126,7 +144,7 @@ namespace ExtraLimb.Limb
             return Quaternion.Inverse(frame.rotation) * (world - frame.position);
         }
 
-        /// <summary>届く範囲（根元の座標）。</summary>
+        /// <summary>届く範囲（根元の座標）。アバターの大きさを変えたら作り直す。</summary>
         public WorkspaceLimiter CreateWorkspace()
         {
             float maxRadius = Mathf.Max(Reach * maxReachRatio, minReach + 0.01f);
@@ -153,7 +171,36 @@ namespace ExtraLimb.Limb
         // 誰も動かさなかったフレームは、手首を既定位置に置く
         void LateUpdate()
         {
-            if (initialized && lastSolveFrame != Time.frameCount) SolveLocal(RestHandPosition);
+            if (!initialized || lastSolveFrame == Time.frameCount) return;
+            if (Mount != null) Mount.UpdateMount();
+            SolveLocal(RestHandPosition);
+        }
+
+        /// <summary>
+        /// 付け根の姿勢を与える。鎖骨を平行移動して上腕の付け根を pose.joint に置き、以後の根元の座標の向きを pose.frameRotation にする。
+        /// 手首の既定位置と肘の点は「x が外向き正」の値で受け取る。
+        /// </summary>
+        public void SetMountPose(in MountPose pose)
+        {
+            if (!initialized) return;
+            var clavicle = Clavicle;
+            if (clavicle != upperArm) clavicle.position += pose.joint - upperArm.position;
+            else upperArm.position = pose.joint;
+            mountFrameRotation = pose.frameRotation;
+            mountRestHandPosition = pose.restHandPosition;
+            mountBendHint = pose.bendHint;
+            mounted = true;
+        }
+
+        /// <summary>今の付け根の姿勢（外向き正の手首・肘の値を含む）。</summary>
+        public MountPose CurrentMountPose
+        {
+            get
+            {
+                var frame = Frame;
+                return new MountPose(frame.position, frame.rotation,
+                    mounted ? mountRestHandPosition : restHandPosition, mounted ? mountBendHint : bendHint);
+            }
         }
 
         void ApplyVisibility()
@@ -192,8 +239,6 @@ namespace ExtraLimb.Limb
 
             frameSource = ResolveFrameSource();
             frameOffset = Quaternion.Inverse(frameSource.rotation) * avatarRoot.rotation;
-            UpperLength = Vector3.Distance(upperArm.position, forearm.position);
-            LowerLength = Vector3.Distance(forearm.position, hand.position);
 
             if (contactTip != null)
             {

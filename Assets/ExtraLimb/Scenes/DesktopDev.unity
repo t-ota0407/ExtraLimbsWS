@@ -268,6 +268,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: SelfAvatar
       objectReference: {fileID: 0}
+    - target: {fileID: 5234274940421191285, guid: bba862fb001bea14dabd87a6ae9ef718, type: 3}
+      propertyPath: showMarkers
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 5266429472372780553, guid: bba862fb001bea14dabd87a6ae9ef718, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -503,6 +507,7 @@ MonoBehaviour:
   vizScale: 0.6
   cubeSize: 0.05
   showGui: 1
+  collapsed: 1
 --- !u!114 &1385390375
 MonoBehaviour:
   m_ObjectHideFlags: 0

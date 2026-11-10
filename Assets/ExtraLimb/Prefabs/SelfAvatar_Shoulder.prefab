@@ -68,6 +68,18 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
       insertIndex: -1
       addedObject: {fileID: 7635080474965883287}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 387613681756231398}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 5234274940421191285}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 9061472659242956391}
+    - targetCorrespondingSourceObject: {fileID: 919132149155446097, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 7199550254782859737}
   m_SourcePrefab: {fileID: 100100000, guid: 60c155f738cdf10429f40a51e77122df, type: 3}
 --- !u!4 &1341503238542781087 stripped
 Transform:
@@ -398,6 +410,71 @@ MonoBehaviour:
   bendHint: {x: 0.35, y: -0.1, z: -0.05}
   maxReachRatio: 0.95
   minReach: 0.12
+--- !u!114 &387613681756231398
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4782203913805575347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99074d16cd0fae04592f1dbbb68e786d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Body::ExtraLimb.Body.BodyFrameProvider
+  modelHeight: 1.8
+  modelShoulderWidth: 0
+--- !u!114 &5234274940421191285
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4782203913805575347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b4bd8c8cf134f5049bebb63cf0ac3b5a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Body::ExtraLimb.Body.AttachPointRegistry
+  body: {fileID: 387613681756231398}
+  points:
+  - {fileID: 11400000, guid: 6fcd266aac6ad0042bd09b1a722347cc, type: 2}
+  - {fileID: 11400000, guid: 700b02d56d54d2c43b578ec10c3d73bb, type: 2}
+  - {fileID: 11400000, guid: eb59346ffdbf131448935268b4edf862, type: 2}
+  showMarkers: 0
+  markerSize: 0.03
+--- !u!114 &9061472659242956391
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4782203913805575347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 565af96a5dc7a764c9fab1f91f87be75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Limb::ExtraLimb.Limb.LimbMountController
+  rig: {fileID: 6996468705631723430}
+  registry: {fileID: 5234274940421191285}
+  initialAttachPointId: shoulder_top
+  transitionSeconds: 0.35
+--- !u!114 &7199550254782859737
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4782203913805575347}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 565af96a5dc7a764c9fab1f91f87be75, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Limb::ExtraLimb.Limb.LimbMountController
+  rig: {fileID: 7635080474965883287}
+  registry: {fileID: 5234274940421191285}
+  initialAttachPointId: shoulder_top
+  transitionSeconds: 0.35
 --- !u!4 &5266429472372780553 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 60c155f738cdf10429f40a51e77122df, type: 3}

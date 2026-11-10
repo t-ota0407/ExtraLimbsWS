@@ -5,7 +5,7 @@ using UnityEngine;
 namespace ExtraLimb.Experiment
 {
     /// <summary>
-    /// 動作確認用の仮のボタン（Step 2-3）。Re-centerのたびに、追加肢の手の前にボタンを並べ直す。
+    /// 動作確認用の仮のボタン（Step 2-3）。Re-centerのたびと、Attach Point を付け替えたときに、追加肢の手の前にボタンを並べ直す。
     /// 黄色のボタンが押す対象で、追加肢の指先が触れると「押した」になり、緑に光って次の対象が黄色になる。
     /// 押した時間はコンソールに出す。Playgroundのタスク（Step 5）ができたら使わない。
     /// </summary>
@@ -60,6 +60,7 @@ namespace ExtraLimb.Experiment
                 return;
             }
             session.Recentered += Layout;
+            session.MountChanged += Layout;
             session.LimbSolved += Check;
         }
 
@@ -67,25 +68,35 @@ namespace ExtraLimb.Experiment
         {
             if (session == null) return;
             session.Recentered -= Layout;
+            session.MountChanged -= Layout;
             session.LimbSolved -= Check;
         }
 
-        /// <summary>今の追加肢の位置に合わせて、ボタンを並べ直す（Re-centerの直後に呼ばれる）。</summary>
+        /// <summary>今の追加肢の位置に合わせて、ボタンを並べ直す（Re-centerと付け替えの直後に呼ばれる）。</summary>
         public void Layout()
         {
             var limb = session.Limb;
             if (limb == null || !limb.IsReady) return;
 
-            // 基準位置で解いた直後なので、手首から指先までのずれ（根元の座標）を測れる
-            var wrist = limb.WorldToFrame(limb.Hand.position);
-            var tip = limb.WorldToFrame(limb.ContactPoint) - wrist;
+            // 腕を解いた直後なので、手首から指先までのずれ（根元の座標）を測れる
+            var tip = limb.WorldToFrame(limb.ContactPoint) - limb.WorldToFrame(limb.Hand.position);
             var basePosition = session.Pipeline.Law.BasePosition;
+            var workspace = session.Pipeline.Workspace;
             float maxTipReach = limb.Reach + tip.magnitude;
 
             for (int i = 0; i < wristOffsets.Length; i++)
             {
                 var offset = limb.Mirror(wristOffsets[i]);
-                var local = basePosition + offset + tip;
+                // 手首がそこへ届くように、届く範囲の少し内側に収める
+                var wrist = basePosition + offset;
+                if (workspace != null)
+                {
+                    wrist = workspace.Clamp(wrist);
+                    var fromCenter = wrist - workspace.Center;
+                    float limit = workspace.MaxRadius * 0.97f;
+                    if (fromCenter.magnitude > limit) wrist = workspace.Center + fromCenter.normalized * limit;
+                }
+                var local = wrist + tip;
                 var button = i < buttons.Count ? buttons[i] : CreateButton(i);
                 button.label = Label(offset);
                 button.transform.position = limb.FrameToWorld(local);
@@ -175,7 +186,7 @@ namespace ExtraLimb.Experiment
         {
             if (!showGui || session == null) return;
             const float width = 420f;
-            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 350f, width, 78f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, LimbSession.PanelHeight + 20f, width, 78f), GUI.skin.box);
             string target = targetIndex >= 0 && targetIndex < buttons.Count ? buttons[targetIndex].label : "—";
             GUILayout.Label($"仮のボタン：押した数 {hits}　直前 {lastSeconds:F2} 秒　平均 {(hits > 0 ? totalSeconds / hits : 0f):F2} 秒　対象「{target}」");
             GUILayout.BeginHorizontal();

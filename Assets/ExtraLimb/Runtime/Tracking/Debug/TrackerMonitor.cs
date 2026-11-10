@@ -22,6 +22,8 @@ namespace ExtraLimb.Tracking
 
         [SerializeField] float cubeSize = 0.05f;
         [SerializeField] bool showGui = true;
+        [Tooltip("一覧をたたんで、状態だけを小さく出す（ほかのパネルと重ならないように）")]
+        [SerializeField] bool collapsed;
 
         static readonly Color[] Palette =
         {
@@ -213,10 +215,20 @@ namespace ExtraLimb.Tracking
         void OnGUI()
         {
             if (!showGui) return;
-            GUILayout.BeginArea(new Rect(10f, 10f, 820f, 420f), GUI.skin.box);
-            GUILayout.Label($"<b>入力ソースの一覧（Step 2-1）</b>　画面更新 {fps:F0} fps　Space：Re-center", Rich);
+            float width = collapsed ? 400f : 820f;
+            float height = collapsed ? 30f + 22f * (providers.Count + 1) : 420f;
+            GUILayout.BeginArea(new Rect(10f, 10f, width, height), GUI.skin.box);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"<b>入力ソースの一覧</b>　画面更新 {fps:F0} fps", Rich);
+            if (GUILayout.Button(collapsed ? "一覧を開く" : "たたむ", GUILayout.Width(90f))) collapsed = !collapsed;
+            GUILayout.EndHorizontal();
             foreach (var provider in providers)
                 GUILayout.Label($"{provider.ProviderName}：{provider.StatusText}");
+            if (collapsed)
+            {
+                GUILayout.EndArea();
+                return;
+            }
 
             if (registry == null)
             {

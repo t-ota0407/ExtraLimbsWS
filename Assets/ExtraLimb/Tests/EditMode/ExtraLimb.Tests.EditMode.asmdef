@@ -7,7 +7,9 @@
     "ExtraLimb.Tracking.OpenVR",
     "UnityEngine.TestRunner",
     "UnityEditor.TestRunner",
-    "ExtraLimb.Limb"
+    "ExtraLimb.Limb",
+    "ExtraLimb.Body",
+    "ExtraLimb.Experiment"
   ],
   "includePlatforms": [
     "Editor"

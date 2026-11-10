@@ -12,7 +12,8 @@ namespace ExtraLimb.Experiment
     /// 追加肢1本を、入力（例：右足首）の腰に対する変位で動かす。設定（LimbRuntimeConfig）はここが持つ。
     /// 自分のアバター（VRIK）が体を解き終えた直後に、変位→制御則→IK の順で計算するので、根元が1フレーム遅れない。
     /// アバターがないシーンでは LateUpdate で計算する。
-    /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）。</para>
+    /// Attach Point を付け替えている間（LimbMountController の補間中）は、手首を新しい位置の既定位置へ連れていく（制御則の基準位置を毎フレーム置き直す）。
+    /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）、F1〜＝生やす位置（AttachPointRegistry の順）。</para>
     /// </summary>
     [DefaultExecutionOrder(10010)]
     public class LimbSession : MonoBehaviour
@@ -38,16 +39,25 @@ namespace ExtraLimb.Experiment
 
         LimbControlPipeline pipeline;
         TrackerRegistry registry;
+        LimbMountController mount;
+        BodyFrameProvider body;
         string referenceId, inputId;
         bool recenterRequested = true, forwardRequested, inputValid, wasInputValid, tickedAfterBody;
+        bool mountCompletedPending, geometryChanged;
         int lastTickFrame = -1;
         string statusMessage = "";
         string forwardMessage = "";
+        string heightText = "", shoulderText = "", bodyMessage = "";
         Transform targetMarker;
+
+        static readonly Key[] AttachPointKeys = { Key.F1, Key.F2, Key.F3, Key.F4, Key.F5 };
 
         public LimbRuntimeConfig Config => config;
         public LimbControlPipeline Pipeline => pipeline;
         public ExtraLimbRig Limb => limb;
+
+        /// <summary>付け根を動かす部品（なければ Attach Point は固定）。</summary>
+        public LimbMountController Mount => mount;
         public string ReferenceId => referenceId;
         public string InputId => inputId;
 
@@ -59,6 +69,9 @@ namespace ExtraLimb.Experiment
 
         /// <summary>毎フレーム、追加肢を解いた直後。</summary>
         public event Action LimbSolved;
+
+        /// <summary>Attach Point の付け替えが終わったか、体の寸法が変わって、基準位置や届く範囲が変わった直後（腕を解いた後）。</summary>
+        public event Action MountChanged;
 
         void Awake()
         {
@@ -95,16 +108,78 @@ namespace ExtraLimb.Experiment
         void Start()
         {
             if (limb == null || !limb.IsReady) return;
+            mount = limb.Mount;
+            body = mount != null ? mount.Registry.Body : FindFirstObjectByType<BodyFrameProvider>();
+            if (mount != null)
+            {
+                mount.MountCompleted += OnMountCompleted;
+                // 設定の Attach Point に付ける（なければ今の位置を設定に書く）
+                if (mount.Registry.TryGet(config.attachPointId, out _)) mount.MountTo(config.attachPointId, immediate: true);
+                config.attachPointId = mount.CurrentId;
+                mount.UpdateMount();
+            }
+            if (body != null)
+            {
+                body.CalibrationChanged += OnCalibrationChanged;
+                if (body.IsReady)
+                {
+                    heightText = (body.Calibration.Height * 100f).ToString("F0");
+                    shoulderText = (body.Calibration.ShoulderWidth * 100f).ToString("F0");
+                }
+            }
             pipeline.Workspace = limb.CreateWorkspace();
             pipeline.SetBasePosition(limb.RestHandPosition);
             targetMarker = CreateMarker("ExtraLimb_IKTarget", new Color(0.3f, 0.9f, 1f), 0.03f);
         }
 
-        /// <summary>設定を差し替える（複製して持つ）。制御方式が変わったらターゲットを基準位置に戻す。</summary>
+        void OnDestroy()
+        {
+            if (mount != null) mount.MountCompleted -= OnMountCompleted;
+            if (body != null) body.CalibrationChanged -= OnCalibrationChanged;
+        }
+
+        void OnMountCompleted(AttachPointDefinition definition)
+        {
+            mountCompletedPending = true;
+            config.attachPointId = definition.id;
+        }
+
+        void OnCalibrationChanged() => geometryChanged = true;
+
+        /// <summary>
+        /// 設定を差し替える（複製して持つ）。制御方式が変わったらターゲットを基準位置に戻す。
+        /// Attach Point が変わったら付け替えを始める。
+        /// </summary>
         public void Apply(LimbRuntimeConfig newConfig)
         {
+            string previousAttachPoint = config.attachPointId;
             config = (newConfig ?? new LimbRuntimeConfig()).Clone();
             pipeline.Apply(config);
+            if (mount != null && config.attachPointId != previousAttachPoint && !mount.MountTo(config.attachPointId))
+                config.attachPointId = mount.CurrentId;
+        }
+
+        /// <summary>F1〜 に対応する Attach Point（0 始まり、AttachPointRegistry の順）へ付け替える。</summary>
+        public void SelectAttachPoint(int index)
+        {
+            if (mount == null) return;
+            var definition = mount.Registry.Get(index);
+            if (definition == null || definition.id == mount.CurrentId) return;
+            var next = config.Clone();
+            next.attachPointId = definition.id;
+            Apply(next);
+            Debug.Log($"[ExtraLimb] 追加肢：生やす位置を「{definition.displayName}」（{definition.id}）に変えます");
+        }
+
+        /// <summary>参加者の身長・肩幅（cm）を入れて、アバターと Attach Point を拡縮する。</summary>
+        public bool ApplyBodyDimensions(float heightCm, float shoulderWidthCm)
+        {
+            if (body == null) return false;
+            bool ok = body.ApplyBodyDimensions(heightCm * 0.01f, shoulderWidthCm * 0.01f);
+            bodyMessage = ok
+                ? $"反映しました（アバターの拡縮 {body.Calibration.AvatarScale:F2}）"
+                : $"範囲外です（身長 {BodyCalibration.MinHeight * 100f:F0}〜{BodyCalibration.MaxHeight * 100f:F0} cm、肩幅 {BodyCalibration.MinShoulderWidth * 100f:F0}〜{BodyCalibration.MaxShoulderWidth * 100f:F0} cm）";
+            return ok;
         }
 
         /// <summary>次の計算で、今の姿勢を変位0にする。</summary>
@@ -119,6 +194,8 @@ namespace ExtraLimb.Experiment
             if (keyboard == null || keyboard.ctrlKey.isPressed || keyboard.altKey.isPressed) return;
             if (keyboard.spaceKey.wasPressedThisFrame) RequestRecenter();
             if (keyboard.fKey.wasPressedThisFrame) RequestRecordForward();
+            for (int i = 0; i < AttachPointKeys.Length; i++)
+                if (keyboard[AttachPointKeys[i]].wasPressedThisFrame) SelectAttachPoint(i);
         }
 
         // 体を解いた通知が来なかったフレーム（アバターがないなど）はここで計算する。実行順を VRIK（9998）より後にしてある
@@ -133,6 +210,13 @@ namespace ExtraLimb.Experiment
             lastTickFrame = Time.frameCount;
             tickedAfterBody = afterBody;
             if (registry == null || limb == null || !limb.IsReady) return;
+
+            // 付け根を置いてから（補間中ならその途中の位置）、基準位置と届く範囲をそれに合わせる
+            if (mount != null) mount.UpdateMount();
+            if (geometryChanged) pipeline.Workspace = limb.CreateWorkspace();
+            bool notifyMount = mountCompletedPending || geometryChanged;
+            if (notifyMount || (mount != null && mount.IsTransitioning)) pipeline.SetBasePosition(limb.RestHandPosition);
+            mountCompletedPending = geometryChanged = false;
 
             AutoSelect();
             bool recentered = false;
@@ -165,6 +249,7 @@ namespace ExtraLimb.Experiment
             }
 
             if (recentered) Recentered?.Invoke();
+            if (notifyMount) MountChanged?.Invoke();
             LimbSolved?.Invoke();
         }
 
@@ -306,8 +391,9 @@ namespace ExtraLimb.Experiment
         {
             if (!showGui) return;
             const float width = 420f;
-            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 10f, width, 330f), GUI.skin.box);
-            GUILayout.Label("<b>追加肢（Step 2-3：位置制御）</b>　Space：Re-center　F：前を記録", Rich);
+            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 10f, width, PanelHeight), GUI.skin.box);
+            int attachPointCount = mount != null ? Mathf.Min(mount.Registry.Count, AttachPointKeys.Length) : 0;
+            GUILayout.Label("<b>追加肢（Step 3-1）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : ""), Rich);
             if (registry == null || limb == null || !limb.IsReady)
             {
                 GUILayout.Label("TrackerRegistryHost か ExtraLimbRig がありません");
@@ -324,6 +410,9 @@ namespace ExtraLimb.Experiment
             if (GUILayout.Button("切替")) CycleSource(isReference: false);
             if (GUILayout.Button("入替")) SwapSources();
             GUILayout.EndHorizontal();
+
+            DrawAttachPointRow();
+            DrawBodyDimensionsRow();
 
             GUILayout.Label($"状態：{statusMessage}（{(tickedAfterBody ? "体を解いた直後に計算" : "LateUpdateで計算")}）");
             GUILayout.Label(pipeline.BodyFrame.HasForward
@@ -349,6 +438,55 @@ namespace ExtraLimb.Experiment
             GUILayout.EndHorizontal();
             showTargetMarker = GUILayout.Toggle(showTargetMarker, "手首のターゲットを表示（水色の球）");
             GUILayout.EndArea();
+        }
+
+        /// <summary>パネルの高さ。仮のボタンのパネルはこの下に置く。</summary>
+        public const float PanelHeight = 430f;
+
+        void DrawAttachPointRow()
+        {
+            if (mount == null)
+            {
+                GUILayout.Label("生やす位置：固定（LimbMountController がありません）");
+                return;
+            }
+            var current = mount.Current;
+            GUILayout.Label($"生やす位置：{(current != null ? current.displayName : "—")}" + (mount.IsTransitioning ? "（付け替え中）" : ""));
+            GUILayout.BeginHorizontal();
+            var points = mount.Registry.Points;
+            for (int i = 0; i < points.Count && i < AttachPointKeys.Length; i++)
+            {
+                if (points[i] == null) continue;
+                string label = $"F{i + 1} {points[i].displayName}";
+                if (points[i] == current) label = $"[{label}]";
+                if (GUILayout.Button(label)) SelectAttachPoint(i);
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        void DrawBodyDimensionsRow()
+        {
+            if (body == null || !body.IsReady) return;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("身長", GUILayout.Width(32f));
+            heightText = GUILayout.TextField(heightText, GUILayout.Width(44f));
+            GUILayout.Label("cm　肩幅", GUILayout.Width(60f));
+            shoulderText = GUILayout.TextField(shoulderText, GUILayout.Width(44f));
+            GUILayout.Label("cm", GUILayout.Width(24f));
+            if (GUILayout.Button("反映"))
+            {
+                if (float.TryParse(heightText, out float height) && float.TryParse(shoulderText, out float shoulder)) ApplyBodyDimensions(height, shoulder);
+                else bodyMessage = "数字で入れてください";
+            }
+            if (GUILayout.Button("モデルの大きさ"))
+            {
+                body.ResetBodyDimensions();
+                heightText = (body.Calibration.Height * 100f).ToString("F0");
+                shoulderText = (body.Calibration.ShoulderWidth * 100f).ToString("F0");
+                bodyMessage = "モデルの大きさに戻しました";
+            }
+            GUILayout.EndHorizontal();
+            if (bodyMessage.Length > 0) GUILayout.Label(bodyMessage);
         }
 
         void SetPositionGain(float gain)
