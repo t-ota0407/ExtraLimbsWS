@@ -8,6 +8,8 @@ namespace ExtraLimb.Experiment
     /// 動作確認用の仮のボタン（Step 2-3）。Re-centerのたびと、Attach Point を付け替えたときに、追加肢の手の前にボタンを並べ直す。
     /// 黄色のボタンが押す対象で、追加肢の指先が触れると「押した」になり、緑に光って次の対象が黄色になる。
     /// 押した時間はコンソールに出す。Playgroundのタスク（Step 5）ができたら使わない。
+    /// 把持の確認用に、ボタンの下に小さな台と立方体も置く（Step 3-4）。立方体は追加肢（右トリガー）でも本来の手（グリップ）でも掴め、
+    /// 放すと落ちる。「立方体を戻す」かRe-centerで台の上に戻る。
     /// </summary>
     [DefaultExecutionOrder(10020)]
     public class PracticeButtonBoard : MonoBehaviour
@@ -25,6 +27,15 @@ namespace ExtraLimb.Experiment
         };
 
         [SerializeField] float buttonSize = 0.06f;
+
+        [Header("把持の確認用の立方体")]
+        [Tooltip("立方体を置く場所：手首を基準位置からこれだけ動かしたときの、手のひらのあたり（根元の向き、x は外向きが正、m）")]
+        [SerializeField] Vector3[] cubeWristOffsets =
+        {
+            new Vector3(-0.08f, -0.12f, 0.10f),
+            new Vector3(0.10f, -0.12f, 0.10f),
+        };
+        [SerializeField] float cubeSize = 0.05f;
         [Tooltip("指先がボタンの中心からこの距離（m）に入ったら押したとする")]
         [SerializeField] float pressRadius = 0.05f;
         [SerializeField] bool showGui = true;
@@ -43,6 +54,10 @@ namespace ExtraLimb.Experiment
         }
 
         readonly List<Button> buttons = new List<Button>();
+        readonly List<Graspable> cubes = new List<Graspable>();
+        readonly List<Transform> pedestals = new List<Transform>();
+        readonly List<Vector3> cubeHomes = new List<Vector3>();
+        int grabs;
         Transform contactMarker;
         int targetIndex = -1;
         float targetShownAt, flashUntil;
@@ -104,7 +119,73 @@ namespace ExtraLimb.Experiment
                     Debug.LogWarning($"[ExtraLimb] 仮のボタン「{button.label}」は追加肢が届かない位置かもしれません（根元から {local.magnitude * 100f:F0} cm）");
             }
             ChooseNextTarget();
+            LayoutCubes(limb, tip, basePosition, workspace);
             Debug.Log($"[ExtraLimb] 仮のボタンを{wristOffsets.Length}個並べました。黄色のボタンを追加肢の指先で押してください");
+        }
+
+        // 立方体の置き場所：手首がそこへ届くとき、手のひら（手首と指先の中間）が来るところ。台の上に載せる
+        void LayoutCubes(ExtraLimbRig limb, Vector3 tip, Vector3 basePosition, ExtraLimb.Core.WorkspaceLimiter workspace)
+        {
+            cubeHomes.Clear();
+            for (int i = 0; i < cubeWristOffsets.Length; i++)
+            {
+                var wrist = basePosition + limb.Mirror(cubeWristOffsets[i]);
+                if (workspace != null)
+                {
+                    wrist = workspace.Clamp(wrist);
+                    var fromCenter = wrist - workspace.Center;
+                    float limit = workspace.MaxRadius * 0.95f;
+                    if (fromCenter.magnitude > limit) wrist = workspace.Center + fromCenter.normalized * limit;
+                }
+                var home = limb.FrameToWorld(wrist + tip * 0.5f);
+                cubeHomes.Add(home);
+                if (i >= cubes.Count) CreateCube(i);
+                pedestals[i].position = home + Vector3.down * (cubeSize * 0.5f + 0.006f);
+            }
+            ResetCubes();
+        }
+
+        /// <summary>掴まれていない立方体を台の上に戻す。</summary>
+        public void ResetCubes()
+        {
+            for (int i = 0; i < cubes.Count && i < cubeHomes.Count; i++)
+            {
+                var cube = cubes[i];
+                if (cube == null || cube.IsHeld) continue;
+                cube.transform.SetPositionAndRotation(cubeHomes[i], Quaternion.identity);
+                var body = cube.Body;
+                if (body != null)
+                {
+                    body.linearVelocity = Vector3.zero;
+                    body.angularVelocity = Vector3.zero;
+                }
+            }
+        }
+
+        void CreateCube(int index)
+        {
+            var pedestal = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            pedestal.name = $"PracticeCube_Pedestal_{index}";
+            pedestal.transform.SetParent(transform, false);
+            pedestal.transform.localScale = new Vector3(cubeSize * 1.8f, 0.012f, cubeSize * 1.8f);
+            var pedestalMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            SetColor(pedestalMaterial, new Color(0.35f, 0.35f, 0.4f));
+            pedestal.GetComponent<Renderer>().material = pedestalMaterial;
+            pedestals.Add(pedestal.transform);
+
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            go.name = $"PracticeCube_{index}";
+            go.transform.SetParent(transform, false);
+            go.transform.localScale = Vector3.one * cubeSize;
+            var material = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            SetColor(material, index % 2 == 0 ? new Color(0.95f, 0.45f, 0.3f) : new Color(0.35f, 0.6f, 1f));
+            go.GetComponent<Renderer>().material = material;
+            var body = go.AddComponent<Rigidbody>();
+            body.mass = 0.1f;
+            body.collisionDetectionMode = CollisionDetectionMode.ContinuousSpeculative;
+            var graspable = go.AddComponent<Graspable>();
+            graspable.Grabbed += _ => grabs++;
+            cubes.Add(graspable);
         }
 
         static string Label(Vector3 offset)
@@ -186,14 +267,15 @@ namespace ExtraLimb.Experiment
         {
             if (!showGui || session == null) return;
             const float width = 420f;
-            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, LimbSession.PanelHeight + 20f, width, 78f), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, LimbSession.PanelHeight + 20f, width, 66f), GUI.skin.box);
             string target = targetIndex >= 0 && targetIndex < buttons.Count ? buttons[targetIndex].label : "—";
-            GUILayout.Label($"仮のボタン：押した数 {hits}　直前 {lastSeconds:F2} 秒　平均 {(hits > 0 ? totalSeconds / hits : 0f):F2} 秒　対象「{target}」");
+            GUILayout.Label($"仮のボタン：押した数 {hits}　直前 {lastSeconds:F2} 秒　対象「{target}」　立方体を掴んだ数 {grabs}");
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Re-centerして並べ直す")) session.RequestRecenter();
+            if (GUILayout.Button("立方体を戻す")) ResetCubes();
             if (GUILayout.Button("数を0に戻す"))
             {
-                hits = 0;
+                hits = grabs = 0;
                 totalSeconds = lastSeconds = 0f;
             }
             GUILayout.EndHorizontal();

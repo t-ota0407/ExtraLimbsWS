@@ -22,7 +22,9 @@ namespace ExtraLimb.Tests.EditMode
             TestMath.AreClose(new Vector3(1f, 2f, 3f), config.axisMapping.Apply(new Vector3(1f, 2f, 3f)));
             Assert.That(config.axisMapping.leverLength, Is.GreaterThan(0f));
             Assert.That(config.mappingPresetId, Is.Empty);
-            Assert.That(config.grasp.onAngleDeg, Is.GreaterThan(config.grasp.offAngleDeg));
+            Assert.That(config.grasp.input, Is.EqualTo(GraspInput.ControllerOrKey));
+            Assert.That(config.grasp.hand, Is.EqualTo(ControllerHand.Right));
+            Assert.That(config.grasp.pressThreshold, Is.GreaterThan(config.grasp.releaseThreshold));
         }
 
         [Test]
@@ -55,8 +57,9 @@ namespace ExtraLimb.Tests.EditMode
                     0.25f),
             };
             config.filter.beta = 7f;
-            config.grasp.kind = GraspTriggerKind.Rotation;
-            config.grasp.twistAxis = SignedAxis.NegY;
+            config.grasp.input = GraspInput.Key;
+            config.grasp.hand = ControllerHand.Left;
+            config.grasp.pressThreshold = 0.7f;
 
             var restored = LimbRuntimeConfig.FromJson(config.ToJson());
 
@@ -68,7 +71,9 @@ namespace ExtraLimb.Tests.EditMode
             Assert.That(restored.axisMapping.forward.IsUsed, Is.False);
             Assert.That(restored.axisMapping.leverLength, Is.EqualTo(0.25f));
             Assert.That(restored.filter.beta, Is.EqualTo(7f));
-            Assert.That(restored.grasp.twistAxis, Is.EqualTo(SignedAxis.NegY));
+            Assert.That(restored.grasp.input, Is.EqualTo(GraspInput.Key));
+            Assert.That(restored.grasp.hand, Is.EqualTo(ControllerHand.Left));
+            Assert.That(restored.grasp.pressThreshold, Is.EqualTo(0.7f));
         }
 
         [Test]
@@ -89,11 +94,11 @@ namespace ExtraLimb.Tests.EditMode
 
             var clone = original.Clone();
             clone.filter.beta = 99f;
-            clone.grasp.onAngleDeg = 99f;
+            clone.grasp.pressThreshold = 99f;
             clone.positionGain = 99f;
 
             Assert.That(original.filter.beta, Is.Not.EqualTo(99f));
-            Assert.That(original.grasp.onAngleDeg, Is.Not.EqualTo(99f));
+            Assert.That(original.grasp.pressThreshold, Is.Not.EqualTo(99f));
             Assert.That(original.positionGain, Is.Not.EqualTo(99f));
         }
     }

@@ -16,35 +16,45 @@ namespace ExtraLimb.Core
         Hybrid = 2,
     }
 
-    /// <summary>掴む・離すの判定方法。</summary>
-    public enum GraspTriggerKind
+    /// <summary>追加肢で掴む入力（計画書の決定事項#23）。</summary>
+    public enum GraspInput
     {
         None = 0,
 
-        /// <summary>入力トラッカーのひねり角で判定する。</summary>
-        Rotation = 1,
+        /// <summary>コントローラーの人差し指トリガー。押している間だけ掴む。</summary>
+        Controller = 1,
 
-        /// <summary>実験者のキー入力で判定する（WoZ）。</summary>
+        /// <summary>実験者のキー（G、WoZ）。押している間だけ掴む。</summary>
         Key = 2,
 
-        /// <summary>ひねり角とキーのどちらでもよい。</summary>
-        Any = 3,
+        /// <summary>トリガーとキーのどちらでもよい（既定。キーは予備）。</summary>
+        ControllerOrKey = 3,
     }
 
-    /// <summary>把持トリガーの設定（Step 3-4で使う）。</summary>
+    /// <summary>コントローラーの左右。</summary>
+    public enum ControllerHand
+    {
+        Left = 0,
+        Right = 1,
+    }
+
+    /// <summary>追加肢の把持の設定（Step 3-4）。本来の手はグリップで掴む（決定事項#6）。</summary>
     [Serializable]
     public class GraspTriggerConfig
     {
-        public GraspTriggerKind kind = GraspTriggerKind.Key;
+        public GraspInput input = GraspInput.ControllerOrKey;
 
-        /// <summary>ひねり角を測る、入力トラッカーの局所軸。</summary>
-        public SignedAxis twistAxis = SignedAxis.PosZ;
+        /// <summary>トリガーを読むコントローラー（追加肢と同じ側）。</summary>
+        public ControllerHand hand = ControllerHand.Right;
 
-        /// <summary>この角度（度）を超えたら掴む。</summary>
-        public float onAngleDeg = 25f;
+        /// <summary>トリガーをこの値（0〜1）以上に押したら掴む。</summary>
+        public float pressThreshold = 0.6f;
 
-        /// <summary>この角度（度）を下回ったら離す。onAngleDeg より小さくして、閾値付近のちらつきを防ぐ。</summary>
-        public float offAngleDeg = 15f;
+        /// <summary>この値以下に戻したら放す。pressThreshold より小さくして、閾値付近のちらつきを防ぐ。</summary>
+        public float releaseThreshold = 0.4f;
+
+        public bool UsesController => input == GraspInput.Controller || input == GraspInput.ControllerOrKey;
+        public bool UsesKey => input == GraspInput.Key || input == GraspInput.ControllerOrKey;
     }
 
     /// <summary>変位に掛けるOne Euro Filterの設定。</summary>

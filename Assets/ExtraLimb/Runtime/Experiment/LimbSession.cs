@@ -19,6 +19,7 @@ namespace ExtraLimb.Experiment
     /// 制御は位置制御だけで、入力の動きはマッピングの型（MappingPreset）で手先の3軸に写す（計画書の決定事項#20・#21）。
     /// 入力の部位を変えると、その部位の既定の型とゲインになる。P で同じ部位の別の型に切り替え、パネルで軸ごとに反転できる。
     /// 左下のパネルに入力の6つの値（並進3つ・回転3つ）と Re-center からの範囲を出す（型を決めるため）。
+    /// 把持は GraspRig（右トリガーで追加肢、グリップで本来の手、G キーは予備）。シーンになければ起動時に追加する。
     /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）、F1〜＝生やす位置（AttachPointRegistry の順）、
     /// Ctrl+1〜4＝入力の部位（右足首・右膝・右肩・右肘）、P＝マッピングの型。エディタでは Game ビューの「Unity Shortcuts」を切っておく（Ctrl+数字が窓の切替に取られるため）。</para>
     /// </summary>
@@ -45,6 +46,10 @@ namespace ExtraLimb.Experiment
         [SerializeField] bool channelPanelCollapsed;
         [SerializeField] Vector2 channelPanelPosition = new Vector2(10f, 150f);
 
+        [Header("把持")]
+        [Tooltip("GraspRig がこの GameObject になければ、起動時に追加する")]
+        [SerializeField] bool createGraspRig = true;
+
         [Header("トラッカーの割り当て（振ってから押す）")]
         [Tooltip("この速さ（cm/s）を超えたトラッカーを「振った」とみなす")]
         [SerializeField] float movingThresholdCmPerSecond = 15f;
@@ -64,6 +69,7 @@ namespace ExtraLimb.Experiment
         LimbMountController mount;
         BodyFrameProvider body;
         TrackerBindingService bindings;
+        GraspRig grasp;
         readonly SourceMotionTracker motion = new SourceMotionTracker();
         string assignMessage = "";
         string referenceId, inputId;
@@ -82,6 +88,9 @@ namespace ExtraLimb.Experiment
         static readonly string[] HandAxisNames = { "右", "上", "前" };
 
         public LimbRuntimeConfig Config => config;
+
+        /// <summary>把持の入力と手。</summary>
+        public GraspRig Grasp => grasp;
 
         /// <summary>使えるマッピングの型（全部位）。</summary>
         public System.Collections.Generic.IReadOnlyList<MappingPreset> MappingPresetList => mappingPresets;
@@ -117,6 +126,9 @@ namespace ExtraLimb.Experiment
                 Array.Sort(mappingPresets, (a, b) => string.CompareOrdinal(a.name, b.name));
             }
             if (mappingPresets.Length == 0) Debug.LogWarning($"[ExtraLimb] マッピングの型が見つかりません（Resources/{mappingPresetResourcePath}）。並進そのままで動かします", this);
+            if (config.grasp == null) config.grasp = new GraspTriggerConfig();
+            grasp = GetComponent<GraspRig>();
+            if (grasp == null && createGraspRig) grasp = gameObject.AddComponent<GraspRig>();
         }
 
         void OnEnable()
@@ -497,7 +509,7 @@ namespace ExtraLimb.Experiment
             DrawChannelPanel();
             GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 10f, width, PanelHeight), GUI.skin.box);
             int attachPointCount = mount != null ? Mathf.Min(mount.Registry.Count, AttachPointKeys.Length) : 0;
-            GUILayout.Label("<b>追加肢（Step 3-3）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : "") + $"　Ctrl+1〜{inputSites.Length}：入力　P：型", Rich);
+            GUILayout.Label("<b>追加肢（Step 3-4）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : "") + $"　Ctrl+1〜{inputSites.Length}：入力　P：型　G：掴む（予備）", Rich);
             if (registry == null || limb == null || !limb.IsReady)
             {
                 GUILayout.Label("TrackerRegistryHost か ExtraLimbRig がありません");
@@ -535,6 +547,7 @@ namespace ExtraLimb.Experiment
             var u = pipeline.LastDisplacement * 100f;
             GUILayout.Label($"型を通した入力 u：右 {u.x,6:F1}　上 {u.y,6:F1}　前 {u.z,6:F1} cm" +
                             (pipeline.AtWorkspaceBoundary ? "　<color=#ff8866>手先が範囲の端</color>" : ""), Rich);
+            DrawGraspRow();
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Re-center（Space）")) RequestRecenter();
@@ -546,6 +559,19 @@ namespace ExtraLimb.Experiment
 
         /// <summary>パネルの高さ。仮のボタンのパネルはこの下に置く。</summary>
         public const float PanelHeight = 520f;
+
+        // 把持：トリガーの押し込み量と、追加肢・本来の手が掴んでいる物
+        void DrawGraspRow()
+        {
+            if (grasp == null || grasp.LimbGrasper == null) return;
+            var held = grasp.LimbGrasper.Held;
+            string side = config.grasp.hand == ControllerHand.Left ? "左" : "右";
+            string pressed = grasp.LimbGrasper.Pressed ? "<b>（掴む）</b>" : "";
+            string hands = "";
+            if (grasp.LeftHand != null && grasp.LeftHand.Held != null) hands += $"　左手：{grasp.LeftHand.Held.name}";
+            if (grasp.RightHand != null && grasp.RightHand.Held != null) hands += $"　右手：{grasp.RightHand.Held.name}";
+            GUILayout.Label($"把持：{side}トリガー {grasp.TriggerValue:F2}{(grasp.KeyPressed ? "＋G" : "")}{pressed}　追加肢：{(held != null ? held.name : "なし")}{hands}", Rich);
+        }
 
         // マッピングの型、手先の各軸の動かし方、軸ごとの反転とゲイン
         void DrawMappingRows()
