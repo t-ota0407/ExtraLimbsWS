@@ -9,14 +9,18 @@ using UnityEngine.InputSystem;
 namespace ExtraLimb.Experiment
 {
     /// <summary>
-    /// 追加肢1本を、入力（例：右足首）の腰に対する変位で動かす。設定（LimbRuntimeConfig）はここが持つ。
+    /// 追加肢1本を、入力（例：右足首）の基準（部屋か腰トラッカー）に対する変位で動かす。設定（LimbRuntimeConfig）はここが持つ。
     /// 自分のアバター（VRIK）が体を解き終えた直後に、変位→制御則→IK の順で計算するので、根元が1フレーム遅れない。
     /// アバターがないシーンでは LateUpdate で計算する。
     /// Attach Point を付け替えている間（LimbMountController の補間中）は、手首を新しい位置の既定位置へ連れていく（制御則の基準位置を毎フレーム置き直す）。
-    /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）、F1〜＝生やす位置（AttachPointRegistry の順）。</para>
+    /// 入力は部位（config.inputSite）からトラッカーを探し、基準は指定がなければ部屋（入力と同じ空間の固定の基準）を使う（SourceSelector）。
+    /// 「前を記録」の結果は基準ごとに保存し（TrackerBindingService）、次の再生でも使う。
+    /// トラッカーを振ってからパネルのボタンを押すと、そのトラッカーを今の入力の部位に割り当てられる。
+    /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）、F1〜＝生やす位置（AttachPointRegistry の順）、
+    /// Ctrl+1〜4＝入力の部位（右足首・右膝・右肩・右肘）。エディタでは Game ビューの「Unity Shortcuts」を切っておく（Ctrl+数字が窓の切替に取られるため）。</para>
     /// </summary>
     [DefaultExecutionOrder(10010)]
-    public class LimbSession : MonoBehaviour
+    public class LimbSession : MonoBehaviour, ISourceSelection
     {
         [SerializeField] TrackerRegistryHost registryHost;
         [Tooltip("空ならシーンから探す")]
@@ -25,9 +29,14 @@ namespace ExtraLimb.Experiment
         [SerializeField] ExtraLimbRig limb;
         [SerializeField] LimbRuntimeConfig config = new LimbRuntimeConfig();
 
-        [Header("入力ソースの自動選択（設定にIDがないとき）")]
-        [Tooltip("入力として優先する部位。基準（腰）と同じ空間のものから選ぶ")]
-        [SerializeField] BodySite preferredInputSite = BodySite.RightAnkle;
+        [Header("入力の部位（Ctrl+1〜の順）")]
+        [SerializeField] BodySite[] inputSites = { BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow };
+
+        [Header("トラッカーの割り当て（振ってから押す）")]
+        [Tooltip("この速さ（cm/s）を超えたトラッカーを「振った」とみなす")]
+        [SerializeField] float movingThresholdCmPerSecond = 15f;
+        [Tooltip("振ってからこの秒数の間、割り当てのボタンを出す")]
+        [SerializeField] float recentMotionSeconds = 4f;
 
         [Header("前を記録")]
         [Tooltip("前を記録するのに必要な、水平の変位（cm）")]
@@ -41,9 +50,12 @@ namespace ExtraLimb.Experiment
         TrackerRegistry registry;
         LimbMountController mount;
         BodyFrameProvider body;
+        TrackerBindingService bindings;
+        readonly SourceMotionTracker motion = new SourceMotionTracker();
+        string assignMessage = "";
         string referenceId, inputId;
         bool recenterRequested = true, forwardRequested, inputValid, wasInputValid, tickedAfterBody;
-        bool mountCompletedPending, geometryChanged;
+        bool mountCompletedPending, geometryChanged, loadForwardPending;
         int lastTickFrame = -1;
         string statusMessage = "";
         string forwardMessage = "";
@@ -51,6 +63,7 @@ namespace ExtraLimb.Experiment
         Transform targetMarker;
 
         static readonly Key[] AttachPointKeys = { Key.F1, Key.F2, Key.F3, Key.F4, Key.F5 };
+        static readonly Key[] InputKeys = { Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5 };
 
         public LimbRuntimeConfig Config => config;
         public LimbControlPipeline Pipeline => pipeline;
@@ -95,6 +108,7 @@ namespace ExtraLimb.Experiment
                 }
             }
             if (limb == null) Debug.LogError("[ExtraLimb] ExtraLimbRig がシーンにないため、追加肢を動かせません", this);
+            if (bindings == null) bindings = TrackerBindingService.Find();
             if (avatar != null) avatar.BodySolved += OnBodySolved;
         }
 
@@ -171,6 +185,50 @@ namespace ExtraLimb.Experiment
             Debug.Log($"[ExtraLimb] 追加肢：生やす位置を「{definition.displayName}」（{definition.id}）に変えます");
         }
 
+        /// <summary>入力の部位を変える（Ctrl+1〜）。トラッカーは部位の割り当てから探す。変えたら Re-center する。</summary>
+        public void SelectInputSite(BodySite site)
+        {
+            if (site == config.inputSite && string.IsNullOrEmpty(config.inputSourceId)) return;
+            var next = config.Clone();
+            next.inputSite = site;
+            next.inputSourceId = "";
+            Apply(next);
+            Debug.Log($"[ExtraLimb] 追加肢：入力を「{BodySiteNames.Japanese(site)}」にします");
+        }
+
+        /// <summary>
+        /// 最近振ったトラッカーを、今の入力の部位に割り当てる。その部位を使っていたトラッカーは未割り当てに戻る。
+        /// 割り当てると入力が変わるので、次の計算で Re-center する。
+        /// </summary>
+        public bool AssignRecentlyMovedTracker()
+        {
+            string id = motion.RecentlyMoved(Time.unscaledTime, recentMotionSeconds);
+            string site = BodySiteNames.Japanese(config.inputSite);
+            if (bindings == null || id == null)
+            {
+                assignMessage = bindings == null ? "TrackerBindingService がないため割り当てられません" : $"{site}のトラッカーを振ってから押してください";
+                return false;
+            }
+            string previous = bindings.Assign(id, config.inputSite);
+            motion.ClearRecent();
+            assignMessage = $"{id} を「{site}」にしました" + (previous != null ? $"（{previous} は未割り当てに戻しました）" : "");
+            return true;
+        }
+
+        /// <summary>基準を順に切り替える：部屋 → 入力と同じ空間の腰（・胸）のトラッカー → 部屋。</summary>
+        public void CycleReference()
+        {
+            if (registry == null || !registry.TryGet(inputId, out var input)) return;
+            var options = new System.Collections.Generic.List<string> { "" };
+            foreach (var source in registry.Sources)
+                if (source.Space == input.Space && source.Id != input.Id && (source.Site == BodySite.Waist || source.Site == BodySite.Chest))
+                    options.Add(source.Id);
+            int index = options.IndexOf(config.referenceSourceId ?? "");
+            var next = config.Clone();
+            next.referenceSourceId = options[(index + 1) % options.Count];
+            Apply(next);
+        }
+
         /// <summary>参加者の身長・肩幅（cm）を入れて、アバターと Attach Point を拡縮する。</summary>
         public bool ApplyBodyDimensions(float heightCm, float shoulderWidthCm)
         {
@@ -190,8 +248,20 @@ namespace ExtraLimb.Experiment
 
         void Update()
         {
+            if (registry != null)
+            {
+                motion.ThresholdMetersPerSecond = movingThresholdCmPerSecond * 0.01f;
+                motion.Update(registry, Time.unscaledDeltaTime, Time.unscaledTime, source => source is IAssignableSite);
+            }
+
             var keyboard = Keyboard.current;
-            if (keyboard == null || keyboard.ctrlKey.isPressed || keyboard.altKey.isPressed) return;
+            if (keyboard == null || keyboard.altKey.isPressed) return;
+            if (keyboard.ctrlKey.isPressed)
+            {
+                for (int i = 0; i < inputSites.Length && i < InputKeys.Length; i++)
+                    if (keyboard[InputKeys[i]].wasPressedThisFrame) SelectInputSite(inputSites[i]);
+                return;
+            }
             if (keyboard.spaceKey.wasPressedThisFrame) RequestRecenter();
             if (keyboard.fKey.wasPressedThisFrame) RequestRecordForward();
             for (int i = 0; i < AttachPointKeys.Length; i++)
@@ -229,6 +299,7 @@ namespace ExtraLimb.Experiment
                     recenterRequested = false;
                     recentered = true;
                     Debug.Log($"[ExtraLimb] 追加肢：Re-center（基準 {referenceId}、入力 {inputId}）");
+                    if (loadForwardPending) LoadForward();
                 }
                 else if (!wasInputValid)
                 {
@@ -260,7 +331,8 @@ namespace ExtraLimb.Experiment
             if (pipeline.TryRecordForward(referencePose, inputPose, minForwardGestureCm * 0.01f))
             {
                 forwardMessage = $"前を記録しました（水平の変位 {horizontal.magnitude * 100f:F1} cm）";
-                Debug.Log($"[ExtraLimb] 追加肢：{forwardMessage}。体の前＝腰トラッカーの座標で {pipeline.BodyFrame.Forward.ToString("F2")}");
+                if (bindings != null) bindings.SaveForward(referenceId, pipeline.BodyFrame.Forward);
+                Debug.Log($"[ExtraLimb] 追加肢：{forwardMessage}。体の前＝基準の座標で {pipeline.BodyFrame.Forward.ToString("F2")}");
             }
             else
             {
@@ -273,49 +345,38 @@ namespace ExtraLimb.Experiment
 
         void AutoSelect()
         {
-            string reference = Exists(config.referenceSourceId) ? config.referenceSourceId : AutoReference();
-            string input = Exists(config.inputSourceId) && config.inputSourceId != reference ? config.inputSourceId : AutoInput(reference);
+            string input = SourceSelector.SelectInput(registry, config.inputSourceId, config.inputSite);
+            string reference = SourceSelector.SelectReference(registry, config.referenceSourceId, input);
             if (reference == referenceId && input == inputId) return;
+            if (reference != referenceId) loadForwardPending = true;
             referenceId = reference;
             inputId = input;
             recenterRequested = true;
             Debug.Log($"[ExtraLimb] 追加肢：基準 {referenceId ?? "なし"}、入力 {inputId ?? "なし"}");
         }
 
-        bool Exists(string id) => !string.IsNullOrEmpty(id) && registry.TryGet(id, out _);
-
-        // 腰（SteamVR を優先）。腰の部位が分からなければ、SteamVR → 仮想トラッカーの順に最初のソース
-        string AutoReference()
+        // 基準が変わったら、その基準で記録してある前の向きを使う（なければ未記録に戻す）
+        void LoadForward()
         {
-            var waist = registry.FindBySite(BodySite.Waist, PoseSpace.SteamVR) ?? registry.FindBySite(BodySite.Waist);
-            if (waist != null) return waist.Id;
-            foreach (var space in new[] { PoseSpace.SteamVR, PoseSpace.Virtual })
-                foreach (var source in registry.Sources)
-                    if (source.Space == space) return source.Id;
-            return null;
-        }
-
-        // 基準と同じ空間で、優先する部位 → 部位が分からないもの → それ以外の順
-        string AutoInput(string reference)
-        {
-            if (reference == null || !registry.TryGet(reference, out var referenceSource)) return null;
-            ITrackedPoseSource unknown = null, other = null;
-            foreach (var source in registry.Sources)
-            {
-                if (source.Id == reference || source.Space != referenceSource.Space) continue;
-                if (source.Site == preferredInputSite) return source.Id;
-                if (source.Site == BodySite.Unknown) unknown ??= source;
-                else other ??= source;
-            }
-            return (unknown ?? other)?.Id;
+            loadForwardPending = false;
+            pipeline.BodyFrame.ClearForward();
+            if (bindings != null && bindings.TryGetForward(referenceId, out var forward) && pipeline.BodyFrame.TrySetForward(forward, 0.01f))
+                forwardMessage = "前の向き：保存した値を使っています";
+            else
+                forwardMessage = "";
         }
 
         bool TryGetPoses(out Pose referencePose, out Pose inputPose)
         {
             referencePose = inputPose = default;
-            if (!registry.TryGet(referenceId, out var reference) || !registry.TryGet(inputId, out var input))
+            if (!registry.TryGet(inputId, out var input))
             {
-                statusMessage = "基準（腰）と入力のソースがありません";
+                statusMessage = $"「{BodySiteNames.Japanese(config.inputSite)}」のトラッカーがありません。そのトラッカーを振って、上のボタンで割り当ててください";
+                return false;
+            }
+            if (!registry.TryGet(referenceId, out var reference))
+            {
+                statusMessage = $"基準がありません（{input.Space} の部屋が登録されていません）";
                 return false;
             }
             if (reference.Space != input.Space)
@@ -325,7 +386,7 @@ namespace ExtraLimb.Experiment
             }
             if (!reference.TryGetPose(out referencePose))
             {
-                statusMessage = "基準（腰）の追跡が切れています。手先は止めています";
+                statusMessage = "基準の追跡が切れています。手先は止めています";
                 return false;
             }
             if (!input.TryGetPose(out inputPose))
@@ -335,34 +396,6 @@ namespace ExtraLimb.Experiment
             }
             statusMessage = "動作中";
             return true;
-        }
-
-        /// <summary>基準か入力を、登録されているソースの中で次のものに切り替える。</summary>
-        void CycleSource(bool isReference)
-        {
-            var sources = registry.Sources;
-            if (sources.Count == 0) return;
-            string current = isReference ? referenceId : inputId;
-            string other = isReference ? inputId : referenceId;
-            int start = 0;
-            for (int i = 0; i < sources.Count; i++)
-                if (sources[i].Id == current) start = i + 1;
-            for (int k = 0; k < sources.Count; k++)
-            {
-                var candidate = sources[(start + k) % sources.Count];
-                if (candidate.Id == other || candidate.Id == current) continue;
-                // 選んだ組を設定に書いて、自動選択で変わらないようにする
-                config.referenceSourceId = (isReference ? candidate.Id : referenceId) ?? "";
-                config.inputSourceId = (isReference ? inputId : candidate.Id) ?? "";
-                return;
-            }
-        }
-
-        void SwapSources()
-        {
-            if (referenceId == null || inputId == null) return;
-            config.referenceSourceId = inputId;
-            config.inputSourceId = referenceId;
         }
 
         // ---- 表示 ----
@@ -384,7 +417,8 @@ namespace ExtraLimb.Experiment
         string Describe(string id)
         {
             if (id == null || registry == null || !registry.TryGet(id, out var source)) return "なし";
-            return $"{id}（{source.Site}・{source.Space}）";
+            if (source is FixedPoseSource) return $"部屋（{source.Space}）";
+            return $"{BodySiteNames.Japanese(source.Site)}（{id}・{source.Space}）";
         }
 
         void OnGUI()
@@ -393,7 +427,7 @@ namespace ExtraLimb.Experiment
             const float width = 420f;
             GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 10f, width, PanelHeight), GUI.skin.box);
             int attachPointCount = mount != null ? Mathf.Min(mount.Registry.Count, AttachPointKeys.Length) : 0;
-            GUILayout.Label("<b>追加肢（Step 3-1）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : ""), Rich);
+            GUILayout.Label("<b>追加肢（Step 3-2）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : "") + $"　Ctrl+1〜{inputSites.Length}：入力", Rich);
             if (registry == null || limb == null || !limb.IsReady)
             {
                 GUILayout.Label("TrackerRegistryHost か ExtraLimbRig がありません");
@@ -401,14 +435,21 @@ namespace ExtraLimb.Experiment
                 return;
             }
 
+            GUILayout.Label($"入力：{Describe(inputId)}");
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"基準（腰）：{Describe(referenceId)}", GUILayout.Width(300f));
-            if (GUILayout.Button("切替")) CycleSource(isReference: true);
+            for (int i = 0; i < inputSites.Length && i < InputKeys.Length; i++)
+            {
+                var site = inputSites[i];
+                bool available = SourceSelector.SelectInput(registry, "", site) != null;
+                string label = $"{i + 1} {BodySiteNames.Japanese(site)}" + (available ? "" : "×");
+                if (site == config.inputSite && string.IsNullOrEmpty(config.inputSourceId)) label = $"[{label}]";
+                if (GUILayout.Button(label)) SelectInputSite(site);
+            }
             GUILayout.EndHorizontal();
+            DrawAssignRow();
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"入力：{Describe(inputId)}", GUILayout.Width(300f));
-            if (GUILayout.Button("切替")) CycleSource(isReference: false);
-            if (GUILayout.Button("入替")) SwapSources();
+            GUILayout.Label($"基準：{Describe(referenceId)}", GUILayout.Width(300f));
+            if (GUILayout.Button("基準を切替")) CycleReference();
             GUILayout.EndHorizontal();
 
             DrawAttachPointRow();
@@ -417,7 +458,7 @@ namespace ExtraLimb.Experiment
             GUILayout.Label($"状態：{statusMessage}（{(tickedAfterBody ? "体を解いた直後に計算" : "LateUpdateで計算")}）");
             GUILayout.Label(pipeline.BodyFrame.HasForward
                 ? "前の向き：記録済み"
-                : "<color=#ffcc44>前の向き：未記録（腰トラッカーの軸で代用）。足を前へ出して F</color>", Rich);
+                : "<color=#ffcc44>前の向き：未記録（基準の軸で代用）。入力の部位を前へ出して F</color>", Rich);
             if (forwardMessage.Length > 0) GUILayout.Label(forwardMessage);
 
             var u = pipeline.LastDisplacement * 100f;
@@ -441,7 +482,33 @@ namespace ExtraLimb.Experiment
         }
 
         /// <summary>パネルの高さ。仮のボタンのパネルはこの下に置く。</summary>
-        public const float PanelHeight = 430f;
+        public const float PanelHeight = 500f;
+
+        // 振ったトラッカーを入力の部位に割り当てる行
+        void DrawAssignRow()
+        {
+            if (bindings == null) return;
+            string site = BodySiteNames.Japanese(config.inputSite);
+            string recent = motion.RecentlyMoved(Time.unscaledTime, recentMotionSeconds);
+            bool missing = inputId == null;
+            ITrackedPoseSource tracker = null;
+            if (recent != null && !registry.TryGet(recent, out tracker)) recent = null;
+            if (recent != null && tracker.Site == config.inputSite)
+            {
+                GUILayout.Label($"振ったトラッカー {recent} は「{site}」です");
+            }
+            else if (recent != null)
+            {
+                if (GUILayout.Button($"振ったトラッカー {recent}（今：{BodySiteNames.Japanese(tracker.Site)}）を「{site}」にする")) AssignRecentlyMovedTracker();
+            }
+            else
+            {
+                GUILayout.Label(missing
+                    ? $"<color=#ffcc44>{site}のトラッカーを振ると、ここに割り当てのボタンが出ます</color>"
+                    : $"割り当て直すときは、{site}のトラッカーを振ってください", Rich);
+            }
+            if (assignMessage.Length > 0) GUILayout.Label(assignMessage);
+        }
 
         void DrawAttachPointRow()
         {

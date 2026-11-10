@@ -9,6 +9,7 @@ namespace ExtraLimb.Tracking.OpenVR
     /// SteamVR（nullドライバでヘッドセットなし）に、描画しない補助アプリとして接続し、
     /// VIVE トラッカーを OpenVRTrackerSource として TrackerRegistry に登録する。
     /// SteamVR が起動していなければ一定間隔で接続し直すので、再生中に SteamVR を起動してもよい。
+    /// 変位の基準に使う「部屋」（FixedPoseSource、ID "room:SteamVR"）も登録する。
     /// 手順は Docs/SteamVR_NullDriver_Setup.md。
     /// </summary>
     [DefaultExecutionOrder(-50)]
@@ -16,13 +17,14 @@ namespace ExtraLimb.Tracking.OpenVR
     {
         [SerializeField] TrackerRegistryHost registryHost;
 
-        [Tooltip("RawAndUncalibrated ならSteamVRのルームセットアップなしで動く。変位は腰から見た値なので十分")]
+        [Tooltip("RawAndUncalibrated ならSteamVRのルームセットアップなしで動く。+Y が上で、ベースステーションに固定された空間")]
         [SerializeField] ETrackingUniverseOrigin universe = ETrackingUniverseOrigin.TrackingUniverseRawAndUncalibrated;
 
         [Tooltip("SteamVRに接続できないときに接続し直す間隔（秒）")]
         [SerializeField] float retryIntervalSeconds = 2f;
 
         TrackerRegistry registry;
+        FixedPoseSource room;
         CVRSystem system;
         EVRInitError lastError = EVRInitError.None;
         float nextRetryTime;
@@ -60,6 +62,8 @@ namespace ExtraLimb.Tracking.OpenVR
                 return;
             }
             registry = registryHost.Registry;
+            room = FixedPoseSource.Room(PoseSpace.SteamVR);
+            registry.Register(room);
             nextRetryTime = 0f;
         }
 
@@ -67,7 +71,10 @@ namespace ExtraLimb.Tracking.OpenVR
         {
             Disconnect();
             if (registry != null)
+            {
                 foreach (var serial in sourcesBySerial.Keys) registry.Unregister(serial);
+                if (room != null) registry.Unregister(room.Id);
+            }
             sourcesBySerial.Clear();
             System.Array.Clear(sourcesByIndex, 0, sourcesByIndex.Length);
         }
@@ -120,7 +127,8 @@ namespace ExtraLimb.Tracking.OpenVR
                 source = new OpenVRTrackerSource(serial, index);
                 string deviceType = OpenVRPoseUtility.GetStringProperty(system, index, ETrackedDeviceProperty.Prop_RegisteredDeviceType_String);
                 source.SteamVRRole = OpenVRPoseUtility.GetTrackerRole(deviceType);
-                source.Site = OpenVRPoseUtility.SiteFromTrackerRole(source.SteamVRRole);
+                source.DefaultSite = OpenVRPoseUtility.SiteFromTrackerRole(source.SteamVRRole);
+                source.Site = source.DefaultSite;
                 sourcesBySerial.Add(serial, source);
                 registry.Register(source);
                 Debug.Log($"[ExtraLimb] SteamVRのトラッカーを登録: {serial}（役割 {source.SteamVRRole ?? "なし"} → {source.Site}）");

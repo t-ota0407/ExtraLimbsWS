@@ -510,6 +510,7 @@ MonoBehaviour:
   limb: {fileID: 5716495493637758488}
   config:
     attachPointId: shoulder_top
+    inputSite: 11
     inputSourceId: 
     referenceSourceId: 
     mode: 0
@@ -532,7 +533,7 @@ MonoBehaviour:
       twistAxis: 4
       onAngleDeg: 25
       offAngleDeg: 15
-  preferredInputSite: 11
+  inputSites: 0b00000009000000050000000d000000
   minForwardGestureCm: 5
   showTargetMarker: 1
   showGui: 1
@@ -564,6 +565,7 @@ GameObject:
   - component: {fileID: 1144175811}
   - component: {fileID: 1144175810}
   - component: {fileID: 1144175809}
+  - component: {fileID: 1144175813}
   m_Layer: 0
   m_Name: Tracking
   m_TagString: Untagged
@@ -601,6 +603,8 @@ MonoBehaviour:
   cubeSize: 0.05
   showGui: 1
   collapsed: 1
+  defaultInputSite: 11
+  movingThresholdCmPerSecond: 15
 --- !u!114 &1144175810
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -645,6 +649,20 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1144175813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1144175807}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 979ade8a35e084c4b89674d19bae1299, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Tracking::ExtraLimb.Tracking.TrackerBindingService
+  registryHost: {fileID: 1144175808}
+  fileName: tracker_bindings.json
 --- !u!1001 &1174751199
 PrefabInstance:
   m_ObjectHideFlags: 0

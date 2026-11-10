@@ -7,6 +7,7 @@ namespace ExtraLimb.Tracking
 {
     /// <summary>
     /// キーボードで動かす仮想トラッカー一式（腰＋各部位）を TrackerRegistry に登録する。HMDやトラッカーなしで開発するために使う。
+    /// 変位の基準に使う「部屋」（ID "room:Virtual"）も登録する。体全体の向きを変える（U/O）と、部屋基準では変位が出る。
     /// 実験時のホットキー（Space、P/V/H、G/T、F1〜F5 など）とぶつからないキーを使う。
     /// </summary>
     [DefaultExecutionOrder(-50)]
@@ -22,7 +23,8 @@ namespace ExtraLimb.Tracking
         {
             new MockTrackerSpec(BodySite.RightAnkle, new Vector3(0.15f, -0.85f, 0.25f)),
             new MockTrackerSpec(BodySite.RightKnee, new Vector3(0.15f, -0.45f, 0.1f)),
-            new MockTrackerSpec(BodySite.LeftShoulder, new Vector3(-0.18f, 0.45f, 0f)),
+            new MockTrackerSpec(BodySite.RightShoulder, new Vector3(0.18f, 0.45f, 0f)),
+            new MockTrackerSpec(BodySite.RightElbow, new Vector3(0.22f, 0.2f, 0.08f)),
         };
 
         [Tooltip("部位を動かす速さ（m/s）。左Shiftを押している間は1/4")]
@@ -37,6 +39,7 @@ namespace ExtraLimb.Tracking
         [SerializeField] bool showHelp = true;
 
         TrackerRegistry registry;
+        FixedPoseSource room;
         MockBody body;
         int selected;
 
@@ -55,6 +58,8 @@ namespace ExtraLimb.Tracking
             }
             registry = registryHost.Registry;
             body = new MockBody(new Pose(waistPosition, Quaternion.identity), trackers);
+            room = FixedPoseSource.Room(PoseSpace.Virtual);
+            registry.Register(room);
             registry.Register(body.Waist);
             foreach (var tracker in body.Trackers) registry.Register(tracker);
             selected = Mathf.Clamp(selected, 0, Mathf.Max(0, body.Trackers.Count - 1));
@@ -65,6 +70,7 @@ namespace ExtraLimb.Tracking
             if (registry == null || body == null) return;
             registry.Unregister(body.Waist.Id);
             foreach (var tracker in body.Trackers) registry.Unregister(tracker.Id);
+            if (room != null) registry.Unregister(room.Id);
         }
 
         void Update()
@@ -110,7 +116,7 @@ namespace ExtraLimb.Tracking
             const float width = 430f, height = 150f;
             GUILayout.BeginArea(new Rect(10f, Screen.height - height - 10f, width, height), GUI.skin.box);
             var tracker = body.Trackers[selected];
-            GUILayout.Label($"仮想トラッカーの操作　選択中：{tracker.Site}（{(tracker.IsTracking ? "追跡中" : "追跡なし")}）");
+            GUILayout.Label($"仮想トラッカーの操作　選択中：{BodySiteNames.Japanese(tracker.Site)}（{(tracker.IsTracking ? "追跡中" : "追跡なし")}）");
             GUILayout.Label("Tab：選ぶ部位を切替　W/S：前後　A/D：左右　Q/E：上下");
             GUILayout.Label("Z/X：ひねる（局所Z軸まわり）　Y：追跡切れをまねる");
             GUILayout.Label($"U/O：体全体の向きを変える（今 {body.BodyYaw:F0}°）　C：初期位置に戻す");

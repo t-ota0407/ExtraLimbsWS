@@ -8,13 +8,16 @@ namespace ExtraLimb.Tracking.OpenVR
     /// SteamVR（ヘッドセットなし）から読む VIVE トラッカー1台。値は OpenVRTrackerProvider が毎フレーム書き込む。
     /// 姿勢は SteamVR のトラッカーの空間（RawAndUncalibrated）で、Questの空間とは合っていない。
     /// </summary>
-    public sealed class OpenVRTrackerSource : ITrackedPoseSource
+    public sealed class OpenVRTrackerSource : ITrackedPoseSource, IAssignableSite
     {
         /// <summary>シリアル番号（例 "LHR-8A48D912"）。</summary>
         public string Id { get; }
 
-        /// <summary>部位。最初は SteamVR の役割から決め、あとから書き換えられる（Step 3-2 の TrackerBindingProfile）。</summary>
+        /// <summary>部位。TrackerBindingService がトラッカーの割り当て（TrackerBindingProfile）から書き込む。</summary>
         public BodySite Site { get; set; }
+
+        /// <summary>割り当てがないときの部位（SteamVR の役割から決めたもの）。</summary>
+        public BodySite DefaultSite { get; internal set; }
 
         public PoseSpace Space => PoseSpace.SteamVR;
 

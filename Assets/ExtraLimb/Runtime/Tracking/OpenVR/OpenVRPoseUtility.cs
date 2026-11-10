@@ -37,6 +37,8 @@ namespace ExtraLimb.Tracking.OpenVR
                 case "TrackerRole_RightShoulder": return BodySite.RightShoulder;
                 case "TrackerRole_LeftKnee": return BodySite.LeftKnee;
                 case "TrackerRole_RightKnee": return BodySite.RightKnee;
+                case "TrackerRole_LeftElbow": return BodySite.LeftElbow;
+                case "TrackerRole_RightElbow": return BodySite.RightElbow;
                 case "TrackerRole_LeftFoot":
                 case "TrackerRole_LeftAnkle": return BodySite.LeftAnkle;
                 case "TrackerRole_RightFoot":

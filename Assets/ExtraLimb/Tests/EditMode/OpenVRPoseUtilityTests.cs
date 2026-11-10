@@ -62,6 +62,8 @@ namespace ExtraLimb.Tests.EditMode
         [TestCase("TrackerRole_RightKnee", BodySite.RightKnee)]
         [TestCase("TrackerRole_LeftShoulder", BodySite.LeftShoulder)]
         [TestCase("TrackerRole_Chest", BodySite.Chest)]
+        [TestCase("TrackerRole_LeftElbow", BodySite.LeftElbow)]
+        [TestCase("TrackerRole_RightElbow", BodySite.RightElbow)]
         [TestCase("TrackerRole_Camera", BodySite.Unknown)]
         [TestCase("TrackerRole_None", BodySite.Unknown)]
         [TestCase(null, BodySite.Unknown)]

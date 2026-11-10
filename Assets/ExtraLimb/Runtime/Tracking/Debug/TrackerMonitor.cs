@@ -6,15 +6,18 @@ using UnityEngine.InputSystem;
 namespace ExtraLimb.Tracking
 {
     /// <summary>
-    /// 開発・確認用のモニタ。TrackerRegistry にあるすべての入力ソースを一覧にし、
-    /// 選んだ基準（腰）から見た入力の変位を表示する。シーンには、基準を原点に置き直した各ソースを立方体で描く。
-    /// 体ごと向きを変えても、立方体と変位は動かない。Space で Re-center。
+    /// 開発・確認用のモニタ。TrackerRegistry にあるすべての入力ソースを一覧にし、基準から見た入力の変位を表示する。
+    /// 基準と入力は、シーンに追加肢（ISourceSelection）があればそれと同じものを使う。なければ SourceSelector の規則（入力は右足首、基準は部屋）。
+    /// SteamVR のトラッカーは、行の部位のボタンで部位を順に切り替えられる（TrackerBindingService に保存。ほかのトラッカーが使っている部位は飛ばす）。
+    /// 「動き」の欄は速さで、トラッカーを振ると強調されるので、どの行がどの実物かを確かめられる。
+    /// シーンには各ソースを立方体で描く：基準が部屋のときは入力の Re-center 時の位置を、腰のときは腰を vizOrigin に置く。
+    /// Space で Re-center。
     /// </summary>
     public class TrackerMonitor : MonoBehaviour
     {
         [SerializeField] TrackerRegistryHost registryHost;
 
-        [Tooltip("基準（腰）を描く位置（ワールド座標、m）。基準の向きはワールドの向きにそろえて描く")]
+        [Tooltip("基準を描く位置（ワールド座標、m）。基準が部屋のときは、入力の Re-center 時の位置をここに描く")]
         [SerializeField] Vector3 vizOrigin = new Vector3(0f, 0.95f, 0f);
 
         [Tooltip("立方体の並びの縮尺。HMDの中で目の前に小さく出すときは0.3〜0.5にする")]
@@ -24,6 +27,12 @@ namespace ExtraLimb.Tracking
         [SerializeField] bool showGui = true;
         [Tooltip("一覧をたたんで、状態だけを小さく出す（ほかのパネルと重ならないように）")]
         [SerializeField] bool collapsed;
+
+        [Tooltip("追加肢がシーンにないときに、入力として探す部位")]
+        [SerializeField] BodySite defaultInputSite = BodySite.RightAnkle;
+
+        [Tooltip("この速さ（cm/s）を超えたソースの「動き」を強調する")]
+        [SerializeField] float movingThresholdCmPerSecond = 15f;
 
         static readonly Color[] Palette =
         {
@@ -39,6 +48,9 @@ namespace ExtraLimb.Tracking
         }
 
         TrackerRegistry registry;
+        TrackerBindingService bindings;
+        ISourceSelection selection;
+        readonly SourceMotionTracker motion = new SourceMotionTracker();
         readonly Dictionary<string, Viz> vizById = new Dictionary<string, Viz>();
         readonly List<ITrackerProviderStatus> providers = new List<ITrackerProviderStatus>();
         readonly NeutralPoseCalibrator calibrator = new NeutralPoseCalibrator();
@@ -56,8 +68,12 @@ namespace ExtraLimb.Tracking
         {
             registryHost = TrackerRegistryHost.Resolve(registryHost);
             registry = registryHost != null ? registryHost.Registry : null;
+            bindings = TrackerBindingService.Find();
             foreach (var behaviour in FindObjectsByType<MonoBehaviour>(FindObjectsSortMode.None))
+            {
                 if (behaviour is ITrackerProviderStatus status) providers.Add(status);
+                if (selection == null && behaviour is ISourceSelection found) selection = found;
+            }
 
             neutralMarker = CreatePrimitive(PrimitiveType.Sphere, "Monitor_Neutral", cubeSize * 0.5f, Color.white).transform;
             neutralMarker.gameObject.SetActive(false);
@@ -76,45 +92,30 @@ namespace ExtraLimb.Tracking
             if (registry == null) return;
 
             var keyboard = Keyboard.current;
-            if (keyboard != null && keyboard.spaceKey.wasPressedThisFrame) recenterRequested = true;
+            if (keyboard != null && keyboard.spaceKey.wasPressedThisFrame && !keyboard.ctrlKey.isPressed) recenterRequested = true;
 
-            AutoSelect();
+            Select();
+            motion.Update(registry, Time.unscaledDeltaTime, Time.unscaledTime);
             UpdateDelta();
             UpdateViz();
         }
 
-        // 基準：腰のソース（SteamVR を優先）。入力：基準と同じ空間の、腰以外のソース。
-        void AutoSelect()
+        void Select()
         {
-            if (!registry.TryGet(referenceId, out _))
+            string input, reference;
+            if (selection != null)
             {
-                var reference = registry.FindBySite(BodySite.Waist, PoseSpace.SteamVR) ?? registry.FindBySite(BodySite.Waist);
-                if (reference == null && registry.Sources.Count > 0) reference = registry.Sources[0];
-                SetReference(reference?.Id);
+                input = selection.InputId;
+                reference = selection.ReferenceId;
             }
-            if (!registry.TryGet(inputId, out _) && registry.TryGet(referenceId, out var currentReference))
+            else
             {
-                foreach (var source in registry.Sources)
-                {
-                    if (source.Id == referenceId || source.Space != currentReference.Space) continue;
-                    SetInput(source.Id);
-                    break;
-                }
+                input = SourceSelector.SelectInput(registry, "", defaultInputSite);
+                reference = SourceSelector.SelectReference(registry, "", input);
             }
-        }
-
-        void SetReference(string id)
-        {
-            if (referenceId == id) return;
-            referenceId = id;
-            calibrator.Clear();
-            recenterRequested = true;
-        }
-
-        void SetInput(string id)
-        {
-            if (inputId == id) return;
-            inputId = id;
+            if (input == inputId && reference == referenceId) return;
+            inputId = input;
+            referenceId = reference;
             calibrator.Clear();
             recenterRequested = true;
         }
@@ -122,19 +123,16 @@ namespace ExtraLimb.Tracking
         void UpdateDelta()
         {
             hasDelta = false;
-            if (!registry.TryGet(referenceId, out var reference) || !registry.TryGet(inputId, out var input))
+            if (!registry.TryGet(inputId, out var input))
             {
-                deltaMessage = "基準と入力を選んでください";
+                deltaMessage = selection != null
+                    ? "入力がありません（追加肢のパネルで、入力の部位のトラッカーを割り当てる）"
+                    : $"入力がありません（{BodySiteNames.Japanese(defaultInputSite)}を割り当てる）";
                 return;
             }
-            if (reference.Id == input.Id)
+            if (!registry.TryGet(referenceId, out var reference))
             {
-                deltaMessage = "基準と入力に別々のソースを選んでください";
-                return;
-            }
-            if (reference.Space != input.Space)
-            {
-                deltaMessage = $"空間が違うため変位を計算できません（基準 {reference.Space}、入力 {input.Space}）";
+                deltaMessage = $"基準がありません（{input.Space} の部屋が登録されていません）";
                 return;
             }
             if (!reference.TryGetPose(out var referencePose) || !input.TryGetPose(out var inputPose))
@@ -146,7 +144,7 @@ namespace ExtraLimb.Tracking
             {
                 calibrator.Recenter(referencePose, inputPose);
                 recenterRequested = false;
-                Debug.Log($"[ExtraLimb] Re-center（基準 {reference.Id}、入力 {input.Id}）");
+                Debug.Log($"[ExtraLimb] モニタ：Re-center（基準 {reference.Id}、入力 {input.Id}）");
             }
             lastDelta = calibrator.Compute(referencePose, inputPose);
             hasDelta = true;
@@ -158,16 +156,22 @@ namespace ExtraLimb.Tracking
             bool hasReference = registry.TryGet(referenceId, out var reference);
             Pose referencePose = default;
             bool referenceValid = hasReference && reference.TryGetPose(out referencePose);
+            bool roomReference = hasReference && reference is FixedPoseSource;
+
+            // 部屋が基準のときは、入力の Re-center 時の位置を vizOrigin に描く（部屋の原点は遠いことがあるため）
+            var anchor = Vector3.zero;
+            if (roomReference && registry.TryGet(inputId, out var input) && input.TryGetPose(out var inputPose))
+                anchor = calibrator.IsCalibrated ? calibrator.NeutralLocalPose.position : NeutralPoseCalibrator.ToReferenceLocal(referencePose, inputPose).position;
 
             foreach (var source in registry.Sources)
             {
                 var viz = GetViz(source);
                 Pose pose = default;
-                bool visible = referenceValid && source.Space == reference.Space && source.TryGetPose(out pose);
+                bool visible = referenceValid && !(source is FixedPoseSource) && source.Space == reference.Space && source.TryGetPose(out pose);
                 viz.transform.gameObject.SetActive(visible);
                 if (!visible) continue;
                 var local = NeutralPoseCalibrator.ToReferenceLocal(referencePose, pose);
-                viz.transform.SetPositionAndRotation(vizOrigin + local.position * vizScale, local.rotation);
+                viz.transform.SetPositionAndRotation(vizOrigin + (local.position - anchor) * vizScale, local.rotation);
                 viz.transform.localScale = Vector3.one * vizScale * (source.Id == referenceId || source.Id == inputId ? cubeSize * 1.4f : cubeSize);
             }
 
@@ -176,7 +180,7 @@ namespace ExtraLimb.Tracking
             deltaLine.enabled = showNeutral;
             if (showNeutral)
             {
-                var neutral = vizOrigin + calibrator.NeutralLocalPose.position * vizScale;
+                var neutral = vizOrigin + (calibrator.NeutralLocalPose.position - anchor) * vizScale;
                 neutralMarker.position = neutral;
                 neutralMarker.localScale = Vector3.one * cubeSize * 0.5f * vizScale;
                 deltaLine.SetPosition(0, neutral);
@@ -215,8 +219,9 @@ namespace ExtraLimb.Tracking
         void OnGUI()
         {
             if (!showGui) return;
-            float width = collapsed ? 400f : 820f;
-            float height = collapsed ? 30f + 22f * (providers.Count + 1) : 420f;
+            int rows = registry != null ? registry.Sources.Count : 0;
+            float width = collapsed ? 400f : 520f;
+            float height = collapsed ? 30f + 22f * (providers.Count + 1) : 200f + 22f * providers.Count + 25f * rows;
             GUILayout.BeginArea(new Rect(10f, 10f, width, height), GUI.skin.box);
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<b>入力ソースの一覧</b>　画面更新 {fps:F0} fps", Rich);
@@ -237,19 +242,30 @@ namespace ExtraLimb.Tracking
                 return;
             }
 
-            GUILayout.Space(4f);
+            GUILayout.Label(bindings != null
+                ? "部位のボタンで SteamVR のトラッカーの部位を切り替える（保存されます。使用中の部位は飛ばします）。トラッカーを振ると「動き」が強調されます"
+                : "TrackerBindingService がないため、部位を割り当てられません");
+            GUILayout.Space(2f);
             foreach (var source in registry.Sources)
             {
-                var color = vizById.TryGetValue(source.Id, out var viz) ? viz.color : Color.gray;
-                bool tracked = source.TryGetPose(out var pose);
+                var viz = GetViz(source);
+                bool tracked = source.TryGetPose(out _);
+                bool room = source is FixedPoseSource;
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(color)}>■</color> {source.Id}", Rich, GUILayout.Width(190f));
-                GUILayout.Label(source.Site.ToString(), GUILayout.Width(95f));
+                GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(room ? Color.gray : viz.color)}>■</color> {source.Id}", Rich, GUILayout.Width(140f));
+                if (bindings != null && source is IAssignableSite)
+                {
+                    if (GUILayout.Button(BodySiteNames.Japanese(source.Site), GUILayout.Width(90f))) bindings.CycleSite(source.Id);
+                }
+                else
+                {
+                    GUILayout.Label(room ? "部屋（固定）" : BodySiteNames.Japanese(source.Site), GUILayout.Width(90f));
+                }
                 GUILayout.Label(source.Space.ToString(), GUILayout.Width(60f));
                 GUILayout.Label(tracked ? "追跡中" : "追跡なし", GUILayout.Width(55f));
-                GUILayout.Label(tracked ? $"位置 {pose.position.ToString("F3")}" : "", GUILayout.Width(190f));
-                if (GUILayout.Button(source.Id == referenceId ? "[基準]" : "基準にする", GUILayout.Width(80f))) SetReference(source.Id);
-                if (GUILayout.Button(source.Id == inputId ? "[入力]" : "入力にする", GUILayout.Width(80f))) SetInput(source.Id);
+                float speed = motion.GetSpeed(source.Id) * 100f;
+                GUILayout.Label(room ? "" : speed >= movingThresholdCmPerSecond ? $"<color=#ffcc44><b>動き {speed,4:F0}</b></color>" : $"動き {speed,4:F0}", Rich, GUILayout.Width(75f));
+                GUILayout.Label(source.Id == inputId ? "<b>入力</b>" : source.Id == referenceId ? "<b>基準</b>" : "", Rich, GUILayout.Width(40f));
                 GUILayout.EndHorizontal();
             }
 
@@ -258,8 +274,9 @@ namespace ExtraLimb.Tracking
             {
                 var dp = lastDelta.position * 100f;
                 float angle = Quaternion.Angle(Quaternion.identity, lastDelta.rotation);
-                GUILayout.Label($"<b>基準から見た入力の変位</b>（Re-center時を0とする。x=右、y=上、z=前）", Rich);
-                GUILayout.Label($"Δx {dp.x,7:F1} cm　Δy {dp.y,7:F1} cm　Δz {dp.z,7:F1} cm　|Δ| {dp.magnitude,6:F1} cm　回転 {angle,6:F1}°");
+                bool roomReference = SourceSelector.IsRoom(registry, referenceId);
+                GUILayout.Label($"<b>基準（{(roomReference ? "部屋" : referenceId)}）から見た入力の変位</b>（Re-center時を0、基準の座標）", Rich);
+                GUILayout.Label($"Δx {dp.x,6:F1}　Δy {dp.y,6:F1}　Δz {dp.z,6:F1} cm　|Δ| {dp.magnitude,5:F1} cm　回転 {angle,5:F1}°");
             }
             else
             {

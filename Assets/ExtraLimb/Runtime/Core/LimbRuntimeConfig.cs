@@ -73,10 +73,13 @@ namespace ExtraLimb.Core
         /// <summary>生やす位置（Attach Point）のID。</summary>
         public string attachPointId = "shoulder_top";
 
-        /// <summary>入力に使うトラッカーのID（シリアル番号）。</summary>
+        /// <summary>入力に使う部位。トラッカーの割り当て（TrackerBindingProfile）からトラッカーを探す。</summary>
+        public BodySite inputSite = BodySite.RightAnkle;
+
+        /// <summary>入力に使うソースのID（シリアル番号など）。空なら inputSite から探す。</summary>
         public string inputSourceId = "";
 
-        /// <summary>変位の基準にする腰トラッカーのID（シリアル番号）。</summary>
+        /// <summary>変位の基準にするソースのID。空なら部屋（入力と同じ空間の固定の基準）。腰トラッカーを使うときはそのシリアル番号。</summary>
         public string referenceSourceId = "";
 
         public ControlModeKind mode = ControlModeKind.Position;
