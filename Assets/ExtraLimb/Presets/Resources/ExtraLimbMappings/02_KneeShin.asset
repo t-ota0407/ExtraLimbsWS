@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1db6b52316b45b29cb0a616b1c095e3, type: 3}
+  m_Name: 02_KneeShin
+  m_EditorClassIdentifier: ExtraLimb.Core::ExtraLimb.Core.MappingPreset
+  id: knee_shin
+  displayName: "膝：すねを振る"
+  site: 9
+  mapping:
+    right:
+      channel: 1
+      scale: 1
+    up:
+      channel: 2
+      scale: 1
+    forward:
+      channel: 4
+      scale: -1
+    leverLength: 0.3
+  gain: 2
+  instruction: "膝を外へ開く→右、膝を上げる→上、すねを前へ振り出す→前（トラッカーをすねの上の方に付けたとき。腿に付けたときは「並進」を使う）"

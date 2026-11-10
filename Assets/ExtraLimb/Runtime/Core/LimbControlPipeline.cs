@@ -5,9 +5,10 @@ namespace ExtraLimb.Core
     /// <summary>
     /// 入力の姿勢から、追加肢の手先のターゲット（根元の座標）までの計算をまとめたもの。
     /// <code>
-    /// Δp = Re-center時からの変位（腰トラッカーの座標）
-    ///   → One Euro Filter → 体の軸に直す → 軸の割り当て M → u
-    ///   → 制御則（位置・速度・ハイブリッド）と届く範囲の制限 → p_t
+    /// Δp, Δq = Re-center時からの変位（基準の座標）
+    ///   → One Euro Filter → 体の軸に直す（並進3つ・回転3つ＝入力の6つの値）
+    ///   → マッピングの型（AxisMapping。回転はてこの長さで長さに直す）→ u
+    ///   → 位置制御と届く範囲の制限 → p_t
     /// </code>
     /// 座標の扱い：u は体の軸（x=右、y=上、z=前）。p_t と基準位置 p_b は追加肢の根元の座標で、軸の向きは体と同じ。
     /// MonoBehaviour に依存しないので、EditModeテストで確かめられる。
@@ -45,8 +46,11 @@ namespace ExtraLimb.Core
         /// <summary>直近の変位（フィルタ前、腰トラッカーの座標）。</summary>
         public PoseDelta LastDelta { get; private set; } = PoseDelta.Zero;
 
-        /// <summary>直近の u（フィルタ後、体の軸に直して軸を割り当てた後）。</summary>
+        /// <summary>直近の u（フィルタ後、体の軸に直してマッピングの型を通した後、m）。</summary>
         public Vector3 LastDisplacement { get; private set; }
+
+        /// <summary>直近の入力の6つの値（フィルタ後、体の軸）。</summary>
+        public InputChannels LastChannels { get; private set; } = InputChannels.Zero;
 
         /// <summary>直近のターゲット p_t（根元の座標）。</summary>
         public Vector3 Target => Law.Target;
@@ -99,6 +103,7 @@ namespace ExtraLimb.Core
             Law.Reset(BasePosition);
             LastDelta = PoseDelta.Zero;
             LastDisplacement = Vector3.zero;
+            LastChannels = InputChannels.Zero;
         }
 
         /// <summary>
@@ -114,6 +119,17 @@ namespace ExtraLimb.Core
         /// <summary>トラッキングが切れて戻ったときなど、フィルタの内部状態だけを消す。</summary>
         public void ResetFilter() => Filter.Reset();
 
+        /// <summary>
+        /// 変位を体の軸の6つの値にする。回転は、Re-center時の入力の向きを基準にした Δq を基準の座標の回転ベクトルに直してから、体の軸で表す。
+        /// そのため、トラッカーの付け方（向き）によらず「前へ傾ける」「右へひねる」の向きがそろう。
+        /// </summary>
+        public InputChannels ToChannels(PoseDelta delta)
+        {
+            var translation = BodyFrame.ToBody(delta.position);
+            var rotationInReference = Calibrator.NeutralLocalPose.rotation * InputChannels.RotationVector(delta.rotation);
+            return new InputChannels(translation, BodyFrame.ToBody(rotationInReference));
+        }
+
         /// <summary>1フレーム進めて、ターゲット p_t（根元の座標）を返す。Re-center前なら、今の姿勢でRe-centerする。</summary>
         public Vector3 Step(Pose reference, Pose input, float dt)
         {
@@ -121,8 +137,8 @@ namespace ExtraLimb.Core
 
             LastDelta = Calibrator.Compute(reference, input);
             var filtered = dt > 0f ? Filter.Filter(LastDelta, dt) : LastDelta;
-            var body = BodyFrame.ToBody(filtered.position);
-            LastDisplacement = Config.axisMapping.Apply(body);
+            LastChannels = ToChannels(filtered);
+            LastDisplacement = Config.axisMapping.Apply(LastChannels);
             return Law.Step(new ControlInput(LastDisplacement), ControlParams.From(Config), dt);
         }
     }

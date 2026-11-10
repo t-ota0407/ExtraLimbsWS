@@ -7,6 +7,8 @@ namespace ExtraLimb.Tests.EditMode
     /// <summary>実行中の設定（Step 1-1）。</summary>
     public class LimbRuntimeConfigTests
     {
+        static readonly Vector3 Sample = new Vector3(1f, 2f, 3f);
+
         [Test]
         public void Defaults_AreUsable()
         {
@@ -16,8 +18,10 @@ namespace ExtraLimb.Tests.EditMode
             Assert.That(config.positionGain, Is.GreaterThan(0f));
             Assert.That(config.velocityGain, Is.GreaterThan(0f));
             Assert.That(config.hybridRadiusCm, Is.GreaterThan(config.deadzoneCm));
-            Assert.That(config.axisMapping.IsPermutation, Is.True);
+            Assert.That(config.axisMapping.HasDistinctChannels, Is.True);
             TestMath.AreClose(new Vector3(1f, 2f, 3f), config.axisMapping.Apply(new Vector3(1f, 2f, 3f)));
+            Assert.That(config.axisMapping.leverLength, Is.GreaterThan(0f));
+            Assert.That(config.mappingPresetId, Is.Empty);
             Assert.That(config.grasp.onAngleDeg, Is.GreaterThan(config.grasp.offAngleDeg));
         }
 
@@ -43,7 +47,12 @@ namespace ExtraLimb.Tests.EditMode
                 velocityGain = 2.5f,
                 deadzoneCm = 1.5f,
                 hybridRadiusCm = 6f,
-                axisMapping = new AxisMapping(SignedAxis.NegZ, SignedAxis.PosX, SignedAxis.NegY, new Vector3(1f, 0.5f, 2f)),
+                mappingPresetId = "shoulder_twist",
+                axisMapping = new AxisMapping(
+                    new ChannelAssignment(InputChannel.TwistRight),
+                    new ChannelAssignment(InputChannel.MoveUp, -0.5f),
+                    new ChannelAssignment(InputChannel.None, 0f),
+                    0.25f),
             };
             config.filter.beta = 7f;
             config.grasp.kind = GraspTriggerKind.Rotation;
@@ -53,8 +62,11 @@ namespace ExtraLimb.Tests.EditMode
 
             Assert.That(restored.ToJson(), Is.EqualTo(config.ToJson()));
             Assert.That(restored.mode, Is.EqualTo(ControlModeKind.Hybrid));
-            Assert.That(restored.axisMapping.x, Is.EqualTo(SignedAxis.NegZ));
-            TestMath.AreClose(new Vector3(1f, 0.5f, 2f), restored.axisMapping.scale);
+            Assert.That(restored.mappingPresetId, Is.EqualTo("shoulder_twist"));
+            Assert.That(restored.axisMapping.right.channel, Is.EqualTo(InputChannel.TwistRight));
+            Assert.That(restored.axisMapping.up.scale, Is.EqualTo(-0.5f));
+            Assert.That(restored.axisMapping.forward.IsUsed, Is.False);
+            Assert.That(restored.axisMapping.leverLength, Is.EqualTo(0.25f));
             Assert.That(restored.filter.beta, Is.EqualTo(7f));
             Assert.That(restored.grasp.twistAxis, Is.EqualTo(SignedAxis.NegY));
         }
@@ -66,8 +78,8 @@ namespace ExtraLimb.Tests.EditMode
 
             Assert.That(restored.mode, Is.EqualTo(ControlModeKind.Rate));
             Assert.That(restored.positionGain, Is.EqualTo(new LimbRuntimeConfig().positionGain));
-            Assert.That(restored.axisMapping.IsPermutation, Is.True);
-            TestMath.AreClose(Vector3.one, restored.axisMapping.scale);
+            Assert.That(restored.axisMapping.HasDistinctChannels, Is.True);
+            TestMath.AreClose(Sample, restored.axisMapping.Apply(Sample));
         }
 
         [Test]

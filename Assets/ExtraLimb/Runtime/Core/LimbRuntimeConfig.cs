@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace ExtraLimb.Core
 {
-    /// <summary>制御方式。</summary>
+    /// <summary>制御方式。実験では位置制御だけを使う（計画書の決定事項#20）。速度制御・ハイブリッドはコードとテストだけ残す。</summary>
     public enum ControlModeKind
     {
         /// <summary>位置制御（0次）：変位に比例して手先が動く。</summary>
@@ -82,12 +82,13 @@ namespace ExtraLimb.Core
         /// <summary>変位の基準にするソースのID。空なら部屋（入力と同じ空間の固定の基準）。腰トラッカーを使うときはそのシリアル番号。</summary>
         public string referenceSourceId = "";
 
+        /// <summary>制御方式。実験では Position だけを使う（パネルには出さない）。</summary>
         public ControlModeKind mode = ControlModeKind.Position;
 
         /// <summary>位置ゲイン G_p（無次元）。変位1cmで手先が何cm動くか。</summary>
         public float positionGain = 2f;
 
-        /// <summary>速度ゲイン G_v（1/s）。変位1cmあたり、手先が毎秒何cm動くか。</summary>
+        /// <summary>速度ゲイン G_v（1/s）。変位1cmあたり、手先が毎秒何cm動くか。速度制御用（実験では使わない）。</summary>
         public float velocityGain = 3f;
 
         /// <summary>速度制御の不感帯の半径 d（cm）。</summary>
@@ -96,6 +97,10 @@ namespace ExtraLimb.Core
         /// <summary>ハイブリッド制御の切替半径 r（cm）。</summary>
         public float hybridRadiusCm = 8f;
 
+        /// <summary>マッピングの型（MappingPreset）のID。空なら入力の部位の既定の型を使う。</summary>
+        public string mappingPresetId = "";
+
+        /// <summary>マッピングの中身。型を選ぶとその値が入り、軸ごとの反転はここに反映する。</summary>
         public AxisMapping axisMapping = AxisMapping.Identity;
 
         public PoseFilterSettings filter = new PoseFilterSettings();
