@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using ExtraLimb.Body;
 using ExtraLimb.Core;
 using ExtraLimb.Limb;
@@ -9,19 +10,19 @@ using UnityEngine.InputSystem;
 namespace ExtraLimb.Experiment
 {
     /// <summary>
-    /// 追加肢1本を、入力（例：右足首）の基準（部屋か腰トラッカー）に対する変位で動かす。設定（LimbRuntimeConfig）はここが持つ。
+    /// 追加肢（右、必要なら左も）を、入力（例：右足首）の基準（部屋か腰トラッカー）に対する変位で動かす。1本ぶんの計算は LimbChannel が持つ。
     /// 自分のアバター（VRIK）が体を解き終えた直後に、変位→制御則→IK の順で計算するので、根元が1フレーム遅れない。
     /// アバターがないシーンでは LateUpdate で計算する。
-    /// Attach Point を付け替えている間（LimbMountController の補間中）は、手首を新しい位置の既定位置へ連れていく（制御則の基準位置を毎フレーム置き直す）。
-    /// 入力は部位（config.inputSite）からトラッカーを探し、基準は指定がなければ部屋（入力と同じ空間の固定の基準）を使う（SourceSelector）。
-    /// 「前を記録」の結果は基準ごとに保存し（TrackerBindingService）、次の再生でも使う。
-    /// トラッカーを振ってからパネルのボタンを押すと、そのトラッカーを今の入力の部位に割り当てられる。
-    /// 制御は位置制御だけで、入力の動きはマッピングの型（MappingPreset）で手先の3軸に写す（計画書の決定事項#20・#21）。
-    /// 入力の部位を変えると、その部位の既定の型とゲインになる。P で同じ部位の別の型に切り替え、パネルで軸ごとに反転できる。
-    /// 左下のパネルに入力の6つの値（並進3つ・回転3つ）と Re-center からの範囲を出す（型を決めるため）。
-    /// 把持は GraspRig（右トリガーで追加肢、グリップで本来の手、G キーは予備）。シーンになければ起動時に追加する。
-    /// <para>操作：Space＝Re-center（今の姿勢を変位0にする）、F＝前を記録（入力の部位を前へ出した状態で押す）、F1〜＝生やす位置（AttachPointRegistry の順）、
-    /// Ctrl+1〜4＝入力の部位（右足首・右膝・右肩・右肘）、P＝マッピングの型。エディタでは Game ビューの「Unity Shortcuts」を切っておく（Ctrl+数字が窓の切替に取られるため）。</para>
+    /// <list type="bullet">
+    /// <item>2本目（左）：フェーズA・Bは右の1本、C・Dで2本（計画書の決定事項#14）。左は右の4台のうち右とは別の部位で動かし、左トリガーで掴む。生やす位置は左右対称（F1〜F3 で両方が変わる）。</item>
+    /// <item>パネルで「設定する追加肢」を選ぶ。入力の部位・型・反転・ゲイン・基準・前を記録・割り当ては、選んだ追加肢に効く。Re-center は両方に効く。</item>
+    /// <item>入力は部位（config.inputSite）からトラッカーを探し、基準は指定がなければ部屋（SourceSelector）。「前を記録」の結果は基準ごとに保存する（TrackerBindingService）。</item>
+    /// <item>制御は位置制御だけで、入力の動きはマッピングの型（MappingPreset）で手先の3軸に写す（決定事項#20・#21）。</item>
+    /// <item>把持は GraspRig（右トリガーで右の追加肢、左トリガーで左の追加肢、グリップで本来の手、G キーは予備）。シーンになければ起動時に追加する。</item>
+    /// </list>
+    /// <para>操作：Space＝Re-center（両方）、F＝前を記録、F1〜＝生やす位置（両方）、Ctrl+1〜4＝入力の部位、P＝マッピングの型、
+    /// T＝2本目を出す・隠す、←／→＝設定する追加肢（左／右）。
+    /// エディタでは Game ビューの「Unity Shortcuts」を切っておく（Ctrl+数字が窓の切替に取られるため）。</para>
     /// </summary>
     [DefaultExecutionOrder(10010)]
     public class LimbSession : MonoBehaviour, ISourceSelection
@@ -29,9 +30,20 @@ namespace ExtraLimb.Experiment
         [SerializeField] TrackerRegistryHost registryHost;
         [Tooltip("空ならシーンから探す")]
         [SerializeField] SelfAvatarRig avatar;
-        [Tooltip("空ならシーンから探す")]
+        [Tooltip("右の追加肢。空ならシーンから探す")]
         [SerializeField] ExtraLimbRig limb;
         [SerializeField] LimbRuntimeConfig config = new LimbRuntimeConfig();
+
+        [Header("2本目（左の追加肢）")]
+        [Tooltip("左の追加肢。空ならシーンから探す")]
+        [SerializeField] ExtraLimbRig leftLimb;
+        [Tooltip("左の追加肢も動かすか（フェーズC・D）。パネルで切り替えられる")]
+        [SerializeField] bool twoLimbs;
+        [SerializeField] LimbRuntimeConfig leftConfig = new LimbRuntimeConfig
+        {
+            inputSite = BodySite.RightKnee,
+            grasp = new GraspTriggerConfig { hand = ControllerHand.Left },
+        };
 
         [Header("入力の部位（Ctrl+1〜の順）")]
         [SerializeField] BodySite[] inputSites = { BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow };
@@ -64,69 +76,77 @@ namespace ExtraLimb.Experiment
         [SerializeField] bool showTargetMarker = true;
         [SerializeField] bool showGui = true;
 
-        LimbControlPipeline pipeline;
+        static readonly Color[] MarkerColors = { new Color(0.3f, 0.9f, 1f), new Color(1f, 0.45f, 0.85f) };
+
         TrackerRegistry registry;
-        LimbMountController mount;
         BodyFrameProvider body;
         TrackerBindingService bindings;
         GraspRig grasp;
+        readonly List<LimbChannel> channels = new List<LimbChannel>();
+        LimbChannel left;
+        int selected;
         readonly SourceMotionTracker motion = new SourceMotionTracker();
         string assignMessage = "";
-        string referenceId, inputId;
-        bool recenterRequested = true, forwardRequested, inputValid, wasInputValid, tickedAfterBody;
-        bool mountCompletedPending, geometryChanged, loadForwardPending;
+        bool tickedAfterBody;
         int lastTickFrame = -1;
-        string statusMessage = "";
-        string forwardMessage = "";
         string heightText = "", shoulderText = "", bodyMessage = "";
-        Transform targetMarker;
-        readonly float[] channelMin = new float[6], channelMax = new float[6];
-        bool hasChannelRange;
 
         static readonly Key[] AttachPointKeys = { Key.F1, Key.F2, Key.F3, Key.F4, Key.F5 };
         static readonly Key[] InputKeys = { Key.Digit1, Key.Digit2, Key.Digit3, Key.Digit4, Key.Digit5 };
         static readonly string[] HandAxisNames = { "右", "上", "前" };
 
-        public LimbRuntimeConfig Config => config;
+        /// <summary>動かしている追加肢（右が先頭）。</summary>
+        public IReadOnlyList<LimbChannel> Channels => channels;
+
+        /// <summary>右の追加肢（仮のボタンなどはこれを使う）。</summary>
+        public LimbChannel Primary => channels.Count > 0 ? channels[0] : null;
+
+        /// <summary>パネルとホットキーで設定する追加肢。</summary>
+        public LimbChannel Selected => channels.Count > 0 ? channels[Mathf.Clamp(selected, 0, channels.Count - 1)] : null;
+
+        /// <summary>左の追加肢も動かしているか。</summary>
+        public bool TwoLimbs => left != null && left.Active;
+
+        /// <summary>右の追加肢の設定。</summary>
+        public LimbRuntimeConfig Config => Primary != null ? Primary.Config : config;
+        public LimbControlPipeline Pipeline => Primary?.Pipeline;
+        public ExtraLimbRig Limb => Primary != null ? Primary.Limb : limb;
+        public LimbMountController Mount => Primary?.Mount;
+        public bool IsInputValid => Primary != null && Primary.IsInputValid;
+
+        // モニタは、パネルで選んでいる追加肢と同じ入力・基準を表示する
+        string ISourceSelection.InputId => Selected?.InputId;
+        string ISourceSelection.ReferenceId => Selected?.ReferenceId;
 
         /// <summary>把持の入力と手。</summary>
         public GraspRig Grasp => grasp;
 
+        internal TrackerBindingService Bindings => bindings;
+        internal float MinForwardGestureMeters => minForwardGestureCm * 0.01f;
+
         /// <summary>使えるマッピングの型（全部位）。</summary>
-        public System.Collections.Generic.IReadOnlyList<MappingPreset> MappingPresetList => mappingPresets;
+        public IReadOnlyList<MappingPreset> MappingPresetList => mappingPresets;
 
-        /// <summary>今のマッピングの型。なければ null。</summary>
-        public MappingPreset CurrentMappingPreset => MappingPresets.Find(mappingPresets, config.mappingPresetId);
-        public LimbControlPipeline Pipeline => pipeline;
-        public ExtraLimbRig Limb => limb;
+        /// <summary>選んでいる追加肢のマッピングの型。なければ null。</summary>
+        public MappingPreset CurrentMappingPreset => Selected != null ? MappingPresets.Find(mappingPresets, Selected.Config.mappingPresetId) : null;
 
-        /// <summary>付け根を動かす部品（なければ Attach Point は固定）。</summary>
-        public LimbMountController Mount => mount;
-        public string ReferenceId => referenceId;
-        public string InputId => inputId;
-
-        /// <summary>基準と入力の両方を追跡できているか。</summary>
-        public bool IsInputValid => inputValid;
-
-        /// <summary>Re-centerして、基準位置で腕を解いた直後。</summary>
+        /// <summary>右の追加肢を Re-center して、基準位置で腕を解いた直後。</summary>
         public event Action Recentered;
 
-        /// <summary>毎フレーム、追加肢を解いた直後。</summary>
+        /// <summary>毎フレーム、右の追加肢を解いた直後。</summary>
         public event Action LimbSolved;
 
-        /// <summary>Attach Point の付け替えが終わったか、体の寸法が変わって、基準位置や届く範囲が変わった直後（腕を解いた後）。</summary>
+        /// <summary>右の追加肢の付け替えが終わったか、体の寸法が変わった直後（腕を解いた後）。</summary>
         public event Action MountChanged;
 
         void Awake()
         {
-            pipeline = new LimbControlPipeline(config);
             if (mappingPresets == null || mappingPresets.Length == 0)
             {
                 mappingPresets = Resources.LoadAll<MappingPreset>(mappingPresetResourcePath);
                 Array.Sort(mappingPresets, (a, b) => string.CompareOrdinal(a.name, b.name));
             }
             if (mappingPresets.Length == 0) Debug.LogWarning($"[ExtraLimb] マッピングの型が見つかりません（Resources/{mappingPresetResourcePath}）。並進そのままで動かします", this);
-            if (config.grasp == null) config.grasp = new GraspTriggerConfig();
             grasp = GetComponent<GraspRig>();
             if (grasp == null && createGraspRig) grasp = gameObject.AddComponent<GraspRig>();
         }
@@ -137,17 +157,15 @@ namespace ExtraLimb.Experiment
             registry = registryHost != null ? registryHost.Registry : null;
             if (registry == null) Debug.LogError("[ExtraLimb] TrackerRegistryHost がシーンにないため、追加肢を動かせません", this);
             if (avatar == null) avatar = FindFirstObjectByType<SelfAvatarRig>();
-            if (limb == null)
+            if (limb == null || leftLimb == null)
             {
-                // 表示している追加肢のうち最初のもの
                 foreach (var candidate in FindObjectsByType<ExtraLimbRig>(FindObjectsSortMode.None))
                 {
-                    if (!candidate.Visible) continue;
-                    limb = candidate;
-                    break;
+                    if (candidate.Side == LimbSide.Right && limb == null) limb = candidate;
+                    else if (candidate.Side == LimbSide.Left && leftLimb == null) leftLimb = candidate;
                 }
             }
-            if (limb == null) Debug.LogError("[ExtraLimb] ExtraLimbRig がシーンにないため、追加肢を動かせません", this);
+            if (limb == null) Debug.LogError("[ExtraLimb] 右の ExtraLimbRig がシーンにないため、追加肢を動かせません", this);
             if (bindings == null) bindings = TrackerBindingService.Find();
             if (avatar != null) avatar.BodySolved += OnBodySolved;
         }
@@ -162,16 +180,21 @@ namespace ExtraLimb.Experiment
         void Start()
         {
             if (limb == null || !limb.IsReady) return;
-            mount = limb.Mount;
-            body = mount != null ? mount.Registry.Body : FindFirstObjectByType<BodyFrameProvider>();
-            if (mount != null)
+            var right = AddChannel(limb, config);
+            right.Recentered += () => Recentered?.Invoke();
+            right.LimbSolved += () => LimbSolved?.Invoke();
+            right.MountChanged += () => MountChanged?.Invoke();
+            if (leftLimb != null && leftLimb.IsReady)
             {
-                mount.MountCompleted += OnMountCompleted;
-                // 設定の Attach Point に付ける（なければ今の位置を設定に書く）
-                if (mount.Registry.TryGet(config.attachPointId, out _)) mount.MountTo(config.attachPointId, immediate: true);
-                config.attachPointId = mount.CurrentId;
-                mount.UpdateMount();
+                // 生やす位置は左右対称にそろえる
+                var leftStart = leftConfig.Clone();
+                leftStart.attachPointId = right.Config.attachPointId;
+                left = AddChannel(leftLimb, leftStart);
+                left.SetActive(false);
+                if (twoLimbs) SetTwoLimbs(true);
             }
+
+            body = right.Mount != null ? right.Mount.Registry.Body : FindFirstObjectByType<BodyFrameProvider>();
             if (body != null)
             {
                 body.CalibrationChanged += OnCalibrationChanged;
@@ -181,90 +204,126 @@ namespace ExtraLimb.Experiment
                     shoulderText = (body.Calibration.ShoulderWidth * 100f).ToString("F0");
                 }
             }
-            pipeline.Workspace = limb.CreateWorkspace();
-            pipeline.SetBasePosition(limb.RestHandPosition);
-            targetMarker = CreateMarker("ExtraLimb_IKTarget", new Color(0.3f, 0.9f, 1f), 0.03f);
+        }
+
+        LimbChannel AddChannel(ExtraLimbRig rig, LimbRuntimeConfig channelConfig)
+        {
+            var channel = new LimbChannel(this, rig, channelConfig);
+            channels.Add(channel);
+            channel.Start(MarkerColors[(channels.Count - 1) % MarkerColors.Length]);
             // 設定の型がその部位のものでなければ、部位の既定の型にする
-            if (MappingPresets.Find(MappingPresets.ForSite(mappingPresets, config.inputSite), config.mappingPresetId) == null)
-                SelectMappingPreset(MappingPresets.Default(mappingPresets, config.inputSite));
+            if (MappingPresets.Find(MappingPresets.ForSite(mappingPresets, channel.Config.inputSite), channel.Config.mappingPresetId) == null)
+                SelectMappingPreset(channel, MappingPresets.Default(mappingPresets, channel.Config.inputSite));
+            return channel;
         }
 
         void OnDestroy()
         {
-            if (mount != null) mount.MountCompleted -= OnMountCompleted;
+            foreach (var channel in channels) channel.Dispose();
             if (body != null) body.CalibrationChanged -= OnCalibrationChanged;
         }
 
-        void OnMountCompleted(AttachPointDefinition definition)
+        void OnCalibrationChanged()
         {
-            mountCompletedPending = true;
-            config.attachPointId = definition.id;
+            foreach (var channel in channels) channel.OnGeometryChanged();
         }
 
-        void OnCalibrationChanged() => geometryChanged = true;
+        // ---- 追加肢の選択と2本目 ----
 
-        /// <summary>
-        /// 設定を差し替える（複製して持つ）。制御方式が変わったらターゲットを基準位置に戻す。
-        /// Attach Point が変わったら付け替えを始める。
-        /// </summary>
-        public void Apply(LimbRuntimeConfig newConfig)
+        /// <summary>パネルとホットキーで設定する追加肢を選ぶ（0=右、1=左）。</summary>
+        public void Select(int index)
         {
-            string previousAttachPoint = config.attachPointId;
-            config = (newConfig ?? new LimbRuntimeConfig()).Clone();
-            pipeline.Apply(config);
-            if (mount != null && config.attachPointId != previousAttachPoint && !mount.MountTo(config.attachPointId))
-                config.attachPointId = mount.CurrentId;
+            if (index < 0 || index >= channels.Count || !channels[index].Active) return;
+            selected = index;
+            assignMessage = "";
         }
 
-        /// <summary>F1〜 に対応する Attach Point（0 始まり、AttachPointRegistry の順）へ付け替える。</summary>
+        /// <summary>左の追加肢を動かすか（フェーズC・D）。止めると隠し、選択を右に戻す。</summary>
+        public void SetTwoLimbs(bool on)
+        {
+            if (left == null) return;
+            left.SetActive(on);
+            if (on)
+            {
+                // 生やす位置を右にそろえる
+                var next = left.Config.Clone();
+                next.attachPointId = Primary.Config.attachPointId;
+                left.Apply(next);
+            }
+            else if (Selected == left)
+            {
+                selected = 0;
+            }
+            Debug.Log($"[ExtraLimb] 左の追加肢を{(on ? "動かします" : "隠します")}");
+        }
+
+        // ---- 設定（選んでいる追加肢に効く） ----
+
+        /// <summary>選んでいる追加肢の設定を差し替える。</summary>
+        public void Apply(LimbRuntimeConfig newConfig) => Selected?.Apply(newConfig);
+
+        /// <summary>F1〜 に対応する Attach Point（0 始まり、AttachPointRegistry の順）へ付け替える。左右とも同じ位置にする。</summary>
         public void SelectAttachPoint(int index)
         {
+            var mount = Primary?.Mount;
             if (mount == null) return;
             var definition = mount.Registry.Get(index);
-            if (definition == null || definition.id == mount.CurrentId) return;
-            var next = config.Clone();
-            next.attachPointId = definition.id;
-            Apply(next);
+            if (definition == null) return;
+            foreach (var channel in channels)
+            {
+                if (channel.Config.attachPointId == definition.id) continue;
+                var next = channel.Config.Clone();
+                next.attachPointId = definition.id;
+                channel.Apply(next);
+            }
             Debug.Log($"[ExtraLimb] 追加肢：生やす位置を「{definition.displayName}」（{definition.id}）に変えます");
         }
 
         /// <summary>
-        /// 入力の部位を変える（Ctrl+1〜）。トラッカーは部位の割り当てから探す。変えたら Re-center する。
+        /// 選んでいる追加肢の入力の部位を変える（Ctrl+1〜）。トラッカーは部位の割り当てから探す。変えたら Re-center する。
         /// マッピングの型とゲインは、その部位の既定の型のものにする。
         /// </summary>
         public void SelectInputSite(BodySite site)
         {
-            if (site == config.inputSite && string.IsNullOrEmpty(config.inputSourceId)) return;
-            var next = config.Clone();
+            var channel = Selected;
+            if (channel == null || (site == channel.Config.inputSite && string.IsNullOrEmpty(channel.Config.inputSourceId))) return;
+            var next = channel.Config.Clone();
             next.inputSite = site;
             next.inputSourceId = "";
             var preset = MappingPresets.Default(mappingPresets, site);
             if (preset != null) SetPreset(next, preset);
-            Apply(next);
-            Debug.Log($"[ExtraLimb] 追加肢：入力を「{BodySiteNames.Japanese(site)}」にします（型：{(preset != null ? preset.displayName : "なし")}）");
+            channel.Apply(next);
+            Debug.Log($"[ExtraLimb] {channel.Label}の追加肢：入力を「{BodySiteNames.Japanese(site)}」にします（型：{(preset != null ? preset.displayName : "なし")}）");
         }
 
-        /// <summary>マッピングの型を選ぶ。型の割り当てとゲインの初期値を設定に入れる（軸ごとの反転は消える）。</summary>
-        public void SelectMappingPreset(MappingPreset preset)
+        /// <summary>選んでいる追加肢のマッピングの型を選ぶ。型の割り当てとゲインの初期値を設定に入れる（軸ごとの反転は消える）。</summary>
+        public void SelectMappingPreset(MappingPreset preset) => SelectMappingPreset(Selected, preset);
+
+        void SelectMappingPreset(LimbChannel channel, MappingPreset preset)
         {
-            if (preset == null) return;
-            var next = config.Clone();
+            if (channel == null || preset == null) return;
+            var next = channel.Config.Clone();
             SetPreset(next, preset);
-            Apply(next);
-            Debug.Log($"[ExtraLimb] 追加肢：マッピングの型を「{preset.displayName}」（{preset.id}）にします。{preset.mapping}、Gp {preset.gain:F1}");
+            channel.Apply(next);
+            Debug.Log($"[ExtraLimb] {channel.Label}の追加肢：マッピングの型を「{preset.displayName}」（{preset.id}）にします。{preset.mapping}、Gp {preset.gain:F1}");
         }
 
-        /// <summary>同じ入力の部位の、次のマッピングの型にする（P）。</summary>
-        public void CycleMappingPreset() => SelectMappingPreset(MappingPresets.Next(mappingPresets, config.inputSite, config.mappingPresetId));
+        /// <summary>選んでいる追加肢を、同じ入力の部位の次のマッピングの型にする（P）。</summary>
+        public void CycleMappingPreset()
+        {
+            var channel = Selected;
+            if (channel != null) SelectMappingPreset(channel, MappingPresets.Next(mappingPresets, channel.Config.inputSite, channel.Config.mappingPresetId));
+        }
 
-        /// <summary>手先の軸（0=右、1=上、2=前）の向きを反転する。</summary>
+        /// <summary>選んでいる追加肢の、手先の軸（0=右、1=上、2=前）の向きを反転する。</summary>
         public void ToggleInverted(int axis)
         {
-            if (axis < 0 || axis > 2 || !config.axisMapping[axis].IsUsed) return;
-            var next = config.Clone();
-            next.axisMapping = config.axisMapping.WithInverted(axis);
-            Apply(next);
-            Debug.Log($"[ExtraLimb] 追加肢：手先の{HandAxisNames[axis]}を{(next.axisMapping.IsInverted(axis) ? "反転" : "元の向き")}にします（{next.axisMapping}）");
+            var channel = Selected;
+            if (channel == null || axis < 0 || axis > 2 || !channel.Config.axisMapping[axis].IsUsed) return;
+            var next = channel.Config.Clone();
+            next.axisMapping = channel.Config.axisMapping.WithInverted(axis);
+            channel.Apply(next);
+            Debug.Log($"[ExtraLimb] {channel.Label}の追加肢：手先の{HandAxisNames[axis]}を{(next.axisMapping.IsInverted(axis) ? "反転" : "元の向き")}にします（{next.axisMapping}）");
         }
 
         static void SetPreset(LimbRuntimeConfig target, MappingPreset preset)
@@ -274,37 +333,49 @@ namespace ExtraLimb.Experiment
             target.positionGain = preset.gain;
         }
 
+        void SetPositionGain(float gain)
+        {
+            var channel = Selected;
+            if (channel == null) return;
+            var next = channel.Config.Clone();
+            next.positionGain = Mathf.Clamp(gain, 0.5f, 5f);
+            channel.Apply(next);
+        }
+
         /// <summary>
-        /// 最近振ったトラッカーを、今の入力の部位に割り当てる。その部位を使っていたトラッカーは未割り当てに戻る。
+        /// 最近振ったトラッカーを、選んでいる追加肢の入力の部位に割り当てる。その部位を使っていたトラッカーは未割り当てに戻る。
         /// 割り当てると入力が変わるので、次の計算で Re-center する。
         /// </summary>
         public bool AssignRecentlyMovedTracker()
         {
+            var channel = Selected;
+            if (channel == null) return false;
             string id = motion.RecentlyMoved(Time.unscaledTime, recentMotionSeconds);
-            string site = BodySiteNames.Japanese(config.inputSite);
+            string site = BodySiteNames.Japanese(channel.Config.inputSite);
             if (bindings == null || id == null)
             {
                 assignMessage = bindings == null ? "TrackerBindingService がないため割り当てられません" : $"{site}のトラッカーを振ってから押してください";
                 return false;
             }
-            string previous = bindings.Assign(id, config.inputSite);
+            string previous = bindings.Assign(id, channel.Config.inputSite);
             motion.ClearRecent();
             assignMessage = $"{id} を「{site}」にしました" + (previous != null ? $"（{previous} は未割り当てに戻しました）" : "");
             return true;
         }
 
-        /// <summary>基準を順に切り替える：部屋 → 入力と同じ空間の腰（・胸）のトラッカー → 部屋。</summary>
+        /// <summary>選んでいる追加肢の基準を順に切り替える：部屋 → 入力と同じ空間の腰（・胸）のトラッカー → 部屋。</summary>
         public void CycleReference()
         {
-            if (registry == null || !registry.TryGet(inputId, out var input)) return;
-            var options = new System.Collections.Generic.List<string> { "" };
+            var channel = Selected;
+            if (channel == null || registry == null || !registry.TryGet(channel.InputId, out var input)) return;
+            var options = new List<string> { "" };
             foreach (var source in registry.Sources)
                 if (source.Space == input.Space && source.Id != input.Id && (source.Site == BodySite.Waist || source.Site == BodySite.Chest))
                     options.Add(source.Id);
-            int index = options.IndexOf(config.referenceSourceId ?? "");
-            var next = config.Clone();
+            int index = options.IndexOf(channel.Config.referenceSourceId ?? "");
+            var next = channel.Config.Clone();
             next.referenceSourceId = options[(index + 1) % options.Count];
-            Apply(next);
+            channel.Apply(next);
         }
 
         /// <summary>参加者の身長・肩幅（cm）を入れて、アバターと Attach Point を拡縮する。</summary>
@@ -318,11 +389,24 @@ namespace ExtraLimb.Experiment
             return ok;
         }
 
-        /// <summary>次の計算で、今の姿勢を変位0にする。</summary>
-        public void RequestRecenter() => recenterRequested = true;
+        /// <summary>次の計算で、動かしているすべての追加肢の今の姿勢を変位0にする。</summary>
+        public void RequestRecenter()
+        {
+            foreach (var channel in channels) channel.RequestRecenter();
+        }
 
-        /// <summary>次の計算で、今の変位の水平成分を「前」として記録する。</summary>
-        public void RequestRecordForward() => forwardRequested = true;
+        /// <summary>次の計算で、選んでいる追加肢の入力の変位の水平成分を「前」として記録する。</summary>
+        public void RequestRecordForward() => Selected?.RequestRecordForward();
+
+        // 前を記録したら保存し、同じ基準を使うほかの追加肢にも同じ前の向きを使う
+        internal void OnForwardRecorded(LimbChannel source)
+        {
+            if (bindings != null) bindings.SaveForward(source.ReferenceId, source.Pipeline.BodyFrame.Forward);
+            foreach (var channel in channels)
+                if (channel != source && channel.ReferenceId == source.ReferenceId) channel.LoadForward();
+        }
+
+        // ---- 毎フレーム ----
 
         void Update()
         {
@@ -343,6 +427,9 @@ namespace ExtraLimb.Experiment
             if (keyboard.spaceKey.wasPressedThisFrame) RequestRecenter();
             if (keyboard.fKey.wasPressedThisFrame) RequestRecordForward();
             if (keyboard.pKey.wasPressedThisFrame) CycleMappingPreset();
+            if (keyboard.tKey.wasPressedThisFrame) SetTwoLimbs(!TwoLimbs);
+            if (keyboard.rightArrowKey.wasPressedThisFrame) Select(0);
+            if (keyboard.leftArrowKey.wasPressedThisFrame && left != null) Select(channels.IndexOf(left));
             for (int i = 0; i < AttachPointKeys.Length; i++)
                 if (keyboard[AttachPointKeys[i]].wasPressedThisFrame) SelectAttachPoint(i);
         }
@@ -358,130 +445,13 @@ namespace ExtraLimb.Experiment
             if (lastTickFrame == Time.frameCount) return;
             lastTickFrame = Time.frameCount;
             tickedAfterBody = afterBody;
-            if (registry == null || limb == null || !limb.IsReady) return;
-
-            // 付け根を置いてから（補間中ならその途中の位置）、基準位置と届く範囲をそれに合わせる
-            if (mount != null) mount.UpdateMount();
-            if (geometryChanged) pipeline.Workspace = limb.CreateWorkspace();
-            bool notifyMount = mountCompletedPending || geometryChanged;
-            if (notifyMount || (mount != null && mount.IsTransitioning)) pipeline.SetBasePosition(limb.RestHandPosition);
-            mountCompletedPending = geometryChanged = false;
-
-            AutoSelect();
-            bool recentered = false;
-            inputValid = TryGetPoses(out var referencePose, out var inputPose);
-            if (inputValid)
-            {
-                if (recenterRequested || !pipeline.IsRecentered)
-                {
-                    pipeline.Recenter(referencePose, inputPose);
-                    recenterRequested = false;
-                    recentered = true;
-                    Debug.Log($"[ExtraLimb] 追加肢：Re-center（基準 {referenceId}、入力 {inputId}）");
-                    if (loadForwardPending) LoadForward();
-                }
-                else if (!wasInputValid)
-                {
-                    pipeline.ResetFilter();
-                }
-                if (forwardRequested) RecordForward(referencePose, inputPose);
-                pipeline.Step(referencePose, inputPose, Time.deltaTime);
-                if (recentered) hasChannelRange = false;
-                UpdateChannelRange(pipeline.LastChannels);
-            }
-            wasInputValid = inputValid;
-
-            // 追跡が切れている間は、最後のターゲットのまま保つ
-            var targetWorld = limb.FrameToWorld(pipeline.Target);
-            limb.Solve(targetWorld);
-            if (targetMarker != null)
-            {
-                targetMarker.gameObject.SetActive(showTargetMarker);
-                targetMarker.position = targetWorld;
-            }
-
-            if (recentered) Recentered?.Invoke();
-            if (notifyMount) MountChanged?.Invoke();
-            LimbSolved?.Invoke();
-        }
-
-        void RecordForward(Pose referencePose, Pose inputPose)
-        {
-            forwardRequested = false;
-            var horizontal = Vector3.ProjectOnPlane(pipeline.Calibrator.Compute(referencePose, inputPose).position, pipeline.BodyFrame.Up);
-            if (pipeline.TryRecordForward(referencePose, inputPose, minForwardGestureCm * 0.01f))
-            {
-                forwardMessage = $"前を記録しました（水平の変位 {horizontal.magnitude * 100f:F1} cm）";
-                if (bindings != null) bindings.SaveForward(referenceId, pipeline.BodyFrame.Forward);
-                Debug.Log($"[ExtraLimb] 追加肢：{forwardMessage}。体の前＝基準の座標で {pipeline.BodyFrame.Forward.ToString("F2")}");
-            }
-            else
-            {
-                forwardMessage = $"前を記録できません：水平の変位が {horizontal.magnitude * 100f:F1} cm（{minForwardGestureCm:F0} cm 以上、前へ出して押す）";
-                Debug.LogWarning($"[ExtraLimb] 追加肢：{forwardMessage}");
-            }
-        }
-
-        // ---- 入力ソースの選択 ----
-
-        void AutoSelect()
-        {
-            string input = SourceSelector.SelectInput(registry, config.inputSourceId, config.inputSite);
-            string reference = SourceSelector.SelectReference(registry, config.referenceSourceId, input);
-            if (reference == referenceId && input == inputId) return;
-            if (reference != referenceId) loadForwardPending = true;
-            referenceId = reference;
-            inputId = input;
-            recenterRequested = true;
-            Debug.Log($"[ExtraLimb] 追加肢：基準 {referenceId ?? "なし"}、入力 {inputId ?? "なし"}");
-        }
-
-        // 基準が変わったら、その基準で記録してある前の向きを使う（なければ未記録に戻す）
-        void LoadForward()
-        {
-            loadForwardPending = false;
-            pipeline.BodyFrame.ClearForward();
-            if (bindings != null && bindings.TryGetForward(referenceId, out var forward) && pipeline.BodyFrame.TrySetForward(forward, 0.01f))
-                forwardMessage = "前の向き：保存した値を使っています";
-            else
-                forwardMessage = "";
-        }
-
-        bool TryGetPoses(out Pose referencePose, out Pose inputPose)
-        {
-            referencePose = inputPose = default;
-            if (!registry.TryGet(inputId, out var input))
-            {
-                statusMessage = $"「{BodySiteNames.Japanese(config.inputSite)}」のトラッカーがありません。そのトラッカーを振って、上のボタンで割り当ててください";
-                return false;
-            }
-            if (!registry.TryGet(referenceId, out var reference))
-            {
-                statusMessage = $"基準がありません（{input.Space} の部屋が登録されていません）";
-                return false;
-            }
-            if (reference.Space != input.Space)
-            {
-                statusMessage = $"基準と入力の空間が違います（{reference.Space} と {input.Space}）";
-                return false;
-            }
-            if (!reference.TryGetPose(out referencePose))
-            {
-                statusMessage = "基準の追跡が切れています。手先は止めています";
-                return false;
-            }
-            if (!input.TryGetPose(out inputPose))
-            {
-                statusMessage = "入力の追跡が切れています。手先は止めています";
-                return false;
-            }
-            statusMessage = "動作中";
-            return true;
+            if (registry == null) return;
+            foreach (var channel in channels) channel.Tick(registry, showTargetMarker);
         }
 
         // ---- 表示 ----
 
-        Transform CreateMarker(string markerName, Color color, float size)
+        internal Transform CreateMarker(string markerName, Color color, float size)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = markerName;
@@ -502,22 +472,28 @@ namespace ExtraLimb.Experiment
             return $"{BodySiteNames.Japanese(source.Site)}（{id}・{source.Space}）";
         }
 
+        /// <summary>パネルの高さ。仮のボタンのパネルはこの下に置く。</summary>
+        public const float PanelHeight = 540f;
+
         void OnGUI()
         {
             if (!showGui) return;
             const float width = 420f;
             DrawChannelPanel();
             GUILayout.BeginArea(new Rect(Screen.width - width - 10f, 10f, width, PanelHeight), GUI.skin.box);
-            int attachPointCount = mount != null ? Mathf.Min(mount.Registry.Count, AttachPointKeys.Length) : 0;
-            GUILayout.Label("<b>追加肢（Step 3-4）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : "") + $"　Ctrl+1〜{inputSites.Length}：入力　P：型　G：掴む（予備）", Rich);
-            if (registry == null || limb == null || !limb.IsReady)
+            var channel = Selected;
+            int attachPointCount = channel?.Mount != null ? Mathf.Min(channel.Mount.Registry.Count, AttachPointKeys.Length) : 0;
+            GUILayout.Label("<b>追加肢（Step 3-5）</b>　Space：Re-center　F：前を記録" + (attachPointCount > 0 ? $"　F1〜F{attachPointCount}：生やす位置" : "") + $"　Ctrl+1〜{inputSites.Length}：入力　P：型　G：掴む（予備）" + (left != null ? "　T：2本目　←→：設定する追加肢" : ""), Rich);
+            if (registry == null || channel == null)
             {
                 GUILayout.Label("TrackerRegistryHost か ExtraLimbRig がありません");
                 GUILayout.EndArea();
                 return;
             }
 
-            GUILayout.Label($"入力：{Describe(inputId)}");
+            DrawLimbSelectRow();
+            var config = channel.Config;
+            GUILayout.Label($"入力：{Describe(channel.InputId)}");
             GUILayout.BeginHorizontal();
             for (int i = 0; i < inputSites.Length && i < InputKeys.Length; i++)
             {
@@ -528,54 +504,78 @@ namespace ExtraLimb.Experiment
                 if (GUILayout.Button(label)) SelectInputSite(site);
             }
             GUILayout.EndHorizontal();
-            DrawAssignRow();
-            DrawMappingRows();
+            DrawAssignRow(channel);
+            DrawMappingRows(channel);
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"基準：{Describe(referenceId)}", GUILayout.Width(300f));
+            GUILayout.Label($"基準：{Describe(channel.ReferenceId)}", GUILayout.Width(300f));
             if (GUILayout.Button("基準を切替")) CycleReference();
             GUILayout.EndHorizontal();
 
-            DrawAttachPointRow();
+            DrawAttachPointRow(channel);
             DrawBodyDimensionsRow();
 
-            GUILayout.Label($"状態：{statusMessage}（{(tickedAfterBody ? "体を解いた直後に計算" : "LateUpdateで計算")}）");
-            GUILayout.Label(pipeline.BodyFrame.HasForward
+            GUILayout.Label($"状態：{channel.StatusMessage}（{(tickedAfterBody ? "体を解いた直後に計算" : "LateUpdateで計算")}）");
+            GUILayout.Label(channel.Pipeline.BodyFrame.HasForward
                 ? "前の向き：記録済み"
                 : "<color=#ffcc44>前の向き：未記録（基準の軸で代用）。入力の部位を前へ出して F</color>", Rich);
-            if (forwardMessage.Length > 0) GUILayout.Label(forwardMessage);
+            if (channel.ForwardMessage.Length > 0) GUILayout.Label(channel.ForwardMessage);
 
-            var u = pipeline.LastDisplacement * 100f;
+            var u = channel.Pipeline.LastDisplacement * 100f;
             GUILayout.Label($"型を通した入力 u：右 {u.x,6:F1}　上 {u.y,6:F1}　前 {u.z,6:F1} cm" +
-                            (pipeline.AtWorkspaceBoundary ? "　<color=#ff8866>手先が範囲の端</color>" : ""), Rich);
+                            (channel.Pipeline.AtWorkspaceBoundary ? "　<color=#ff8866>手先が範囲の端</color>" : ""), Rich);
             DrawGraspRow();
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Re-center（Space）")) RequestRecenter();
             if (GUILayout.Button("前を記録（F）")) RequestRecordForward();
             GUILayout.EndHorizontal();
-            showTargetMarker = GUILayout.Toggle(showTargetMarker, "手首のターゲットを表示（水色の球）");
+            showTargetMarker = GUILayout.Toggle(showTargetMarker, "手首のターゲットを表示（右は水色、左は桃色の球）");
             GUILayout.EndArea();
         }
 
-        /// <summary>パネルの高さ。仮のボタンのパネルはこの下に置く。</summary>
-        public const float PanelHeight = 520f;
+        // 設定する追加肢の選択と、2本目の表示
+        void DrawLimbSelectRow()
+        {
+            if (left == null) return;
+            GUILayout.BeginHorizontal();
+            GUILayout.Label("設定する追加肢（←→）", GUILayout.Width(130f));
+            for (int i = 0; i < channels.Count; i++)
+            {
+                var channel = channels[i];
+                GUI.enabled = channel.Active;
+                string label = $"{channel.Label}の追加肢";
+                if (channel == Selected) label = $"[{label}]";
+                if (GUILayout.Button(label)) Select(i);
+                GUI.enabled = true;
+            }
+            if (GUILayout.Button(TwoLimbs ? "2本目を隠す（T）" : "2本目を出す（T）")) SetTwoLimbs(!TwoLimbs);
+            GUILayout.EndHorizontal();
+        }
 
         // 把持：トリガーの押し込み量と、追加肢・本来の手が掴んでいる物
         void DrawGraspRow()
         {
-            if (grasp == null || grasp.LimbGrasper == null) return;
-            var held = grasp.LimbGrasper.Held;
-            string side = config.grasp.hand == ControllerHand.Left ? "左" : "右";
-            string pressed = grasp.LimbGrasper.Pressed ? "<b>（掴む）</b>" : "";
-            string hands = "";
-            if (grasp.LeftHand != null && grasp.LeftHand.Held != null) hands += $"　左手：{grasp.LeftHand.Held.name}";
-            if (grasp.RightHand != null && grasp.RightHand.Held != null) hands += $"　右手：{grasp.RightHand.Held.name}";
-            GUILayout.Label($"把持：{side}トリガー {grasp.TriggerValue:F2}{(grasp.KeyPressed ? "＋G" : "")}{pressed}　追加肢：{(held != null ? held.name : "なし")}{hands}", Rich);
+            if (grasp == null) return;
+            var parts = new List<string>();
+            foreach (var channel in channels)
+            {
+                if (!channel.Active) continue;
+                var grasper = grasp.GrasperFor(channel);
+                if (grasper == null) continue;
+                string side = channel.Config.grasp.hand == ControllerHand.Left ? "左" : "右";
+                string pressed = grasper.Pressed ? "<b>（掴む）</b>" : "";
+                string held = grasper.Held != null ? grasper.Held.name : "なし";
+                parts.Add($"{channel.Label}：{side}トリガー {grasp.TriggerValue(channel):F2}{pressed} {held}");
+            }
+            if (grasp.LeftHand != null && grasp.LeftHand.Held != null) parts.Add($"左手：{grasp.LeftHand.Held.name}");
+            if (grasp.RightHand != null && grasp.RightHand.Held != null) parts.Add($"右手：{grasp.RightHand.Held.name}");
+            GUILayout.Label("把持　" + string.Join("　", parts) + (grasp.KeyPressed ? "　G" : ""), Rich);
         }
 
         // マッピングの型、手先の各軸の動かし方、軸ごとの反転とゲイン
-        void DrawMappingRows()
+        void DrawMappingRows(LimbChannel channel)
         {
+            var config = channel.Config;
             var presets = MappingPresets.ForSite(mappingPresets, config.inputSite);
             var preset = MappingPresets.Find(presets, config.mappingPresetId);
             GUILayout.BeginHorizontal();
@@ -601,30 +601,17 @@ namespace ExtraLimb.Experiment
             GUILayout.EndHorizontal();
         }
 
-        // 入力の6つの値の表示用の値（並進は cm、回転は度）
-        static float DisplayValue(in InputChannels channels, InputChannel channel) =>
-            channel.IsRotation() ? channels.Raw(channel) * Mathf.Rad2Deg : channels.Raw(channel) * 100f;
-
-        void UpdateChannelRange(in InputChannels channels)
-        {
-            for (int i = 0; i < InputChannelInfo.All.Length; i++)
-            {
-                float value = DisplayValue(channels, InputChannelInfo.All[i]);
-                channelMin[i] = hasChannelRange ? Mathf.Min(channelMin[i], value) : value;
-                channelMax[i] = hasChannelRange ? Mathf.Max(channelMax[i], value) : value;
-            }
-            hasChannelRange = true;
-        }
-
-        // 左のパネル：入力の6つの値と、Re-center からの範囲（型を決めるため）
+        // 左のパネル：選んでいる追加肢の入力の6つの値と、Re-center からの範囲（型を決めるため）
         void DrawChannelPanel()
         {
-            if (!showChannelPanel || registry == null || limb == null || !limb.IsReady) return;
+            var channel = Selected;
+            if (!showChannelPanel || registry == null || channel == null) return;
             const float width = 430f;
             float height = channelPanelCollapsed ? 34f : 270f;
             GUILayout.BeginArea(new Rect(channelPanelPosition.x, channelPanelPosition.y, width, height), GUI.skin.box);
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>入力の6つの値</b>（{BodySiteNames.Japanese(config.inputSite)}、体の軸、Re-center時を0）", Rich);
+            string limbLabel = channels.Count > 1 ? $"{channel.Label}の追加肢、" : "";
+            GUILayout.Label($"<b>入力の6つの値</b>（{limbLabel}{BodySiteNames.Japanese(channel.Config.inputSite)}、体の軸、Re-center時を0）", Rich);
             if (GUILayout.Button(channelPanelCollapsed ? "開く" : "たたむ", GUILayout.Width(60f))) channelPanelCollapsed = !channelPanelCollapsed;
             GUILayout.EndHorizontal();
             if (channelPanelCollapsed)
@@ -641,42 +628,43 @@ namespace ExtraLimb.Experiment
             GUILayout.Label("", GUILayout.Width(26f));
             GUILayout.Label("手先");
             GUILayout.EndHorizontal();
-            var channels = pipeline.LastChannels;
-            var mapping = config.axisMapping;
+            var values = channel.Pipeline.LastChannels;
+            var mapping = channel.Config.axisMapping;
+            bool hasRange = channel.HasChannelRange;
             for (int i = 0; i < InputChannelInfo.All.Length; i++)
             {
-                var channel = InputChannelInfo.All[i];
+                var inputChannel = InputChannelInfo.All[i];
                 string used = "";
                 for (int axis = 0; axis < 3; axis++)
-                    if (mapping[axis].IsUsed && mapping[axis].channel == channel)
+                    if (mapping[axis].IsUsed && mapping[axis].channel == inputChannel)
                         used = $"→ {HandAxisNames[axis]}" + (mapping.IsInverted(axis) ? "（反転）" : "");
                 string Format(float v) => used.Length > 0 ? $"<b>{v,6:+0.0;-0.0}</b>" : $"{v,6:+0.0;-0.0}";
                 GUILayout.BeginHorizontal();
-                GUILayout.Label(used.Length > 0 ? $"<b>{InputChannelInfo.Describe(channel)}</b>" : InputChannelInfo.Describe(channel), Rich, GUILayout.Width(96f));
-                GUILayout.Label(Format(DisplayValue(channels, channel)), Rich, GUILayout.Width(56f));
-                GUILayout.Label(hasChannelRange ? Format(channelMin[i]) : "", Rich, GUILayout.Width(56f));
-                GUILayout.Label(hasChannelRange ? Format(channelMax[i]) : "", Rich, GUILayout.Width(56f));
-                GUILayout.Label(channel.IsRotation() ? "°" : "cm", GUILayout.Width(26f));
+                GUILayout.Label(used.Length > 0 ? $"<b>{InputChannelInfo.Describe(inputChannel)}</b>" : InputChannelInfo.Describe(inputChannel), Rich, GUILayout.Width(96f));
+                GUILayout.Label(Format(LimbChannel.DisplayValue(values, inputChannel)), Rich, GUILayout.Width(56f));
+                GUILayout.Label(hasRange ? Format(channel.ChannelMin(i)) : "", Rich, GUILayout.Width(56f));
+                GUILayout.Label(hasRange ? Format(channel.ChannelMax(i)) : "", Rich, GUILayout.Width(56f));
+                GUILayout.Label(inputChannel.IsRotation() ? "°" : "cm", GUILayout.Width(26f));
                 GUILayout.Label(used.Length > 0 ? $"<b>{used}</b>" : "", Rich);
                 GUILayout.EndHorizontal();
             }
             var preset = CurrentMappingPreset;
             if (preset != null && preset.instruction.Length > 0) GUILayout.Label($"動かし方：{preset.instruction}");
             if (mapping.UsesRotation) GUILayout.Label($"回転は、てこ {mapping.leverLength * 100f:F0} cm で長さに直す（10° で {mapping.leverLength * 10f * Mathf.Deg2Rad * 100f:F1} cm）");
-            if (GUILayout.Button("範囲をリセット", GUILayout.Width(120f))) hasChannelRange = false;
+            if (GUILayout.Button("範囲をリセット", GUILayout.Width(120f))) channel.ResetChannelRange();
             GUILayout.EndArea();
         }
 
-        // 振ったトラッカーを入力の部位に割り当てる行
-        void DrawAssignRow()
+        // 振ったトラッカーを、選んでいる追加肢の入力の部位に割り当てる行
+        void DrawAssignRow(LimbChannel channel)
         {
             if (bindings == null) return;
-            string site = BodySiteNames.Japanese(config.inputSite);
+            string site = BodySiteNames.Japanese(channel.Config.inputSite);
             string recent = motion.RecentlyMoved(Time.unscaledTime, recentMotionSeconds);
-            bool missing = inputId == null;
+            bool missing = channel.InputId == null;
             ITrackedPoseSource tracker = null;
             if (recent != null && !registry.TryGet(recent, out tracker)) recent = null;
-            if (recent != null && tracker.Site == config.inputSite)
+            if (recent != null && tracker.Site == channel.Config.inputSite)
             {
                 GUILayout.Label($"振ったトラッカー {recent} は「{site}」です");
             }
@@ -693,15 +681,16 @@ namespace ExtraLimb.Experiment
             if (assignMessage.Length > 0) GUILayout.Label(assignMessage);
         }
 
-        void DrawAttachPointRow()
+        void DrawAttachPointRow(LimbChannel channel)
         {
+            var mount = channel.Mount;
             if (mount == null)
             {
                 GUILayout.Label("生やす位置：固定（LimbMountController がありません）");
                 return;
             }
             var current = mount.Current;
-            GUILayout.Label($"生やす位置：{(current != null ? current.displayName : "—")}" + (mount.IsTransitioning ? "（付け替え中）" : ""));
+            GUILayout.Label($"生やす位置：{(current != null ? current.displayName : "—")}" + (TwoLimbs ? "（左右とも）" : "") + (mount.IsTransitioning ? "（付け替え中）" : ""));
             GUILayout.BeginHorizontal();
             var points = mount.Registry.Points;
             for (int i = 0; i < points.Count && i < AttachPointKeys.Length; i++)
@@ -737,13 +726,6 @@ namespace ExtraLimb.Experiment
             }
             GUILayout.EndHorizontal();
             if (bodyMessage.Length > 0) GUILayout.Label(bodyMessage);
-        }
-
-        void SetPositionGain(float gain)
-        {
-            var next = config.Clone();
-            next.positionGain = Mathf.Clamp(gain, 0.5f, 5f);
-            Apply(next);
         }
 
         static GUIStyle rich;
