@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 426869763}
   - component: {fileID: 426869762}
   - component: {fileID: 426869765}
+  - component: {fileID: 426869766}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -256,6 +257,37 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!114 &426869766
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 426869761}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4d0e798a2e3b6bc499a4f91eaa3e9dd7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.UI::ExtraLimb.UI.SpectatorCamera
+  session: {fileID: 0}
+  body: {fileID: 0}
+  viewpoints:
+  - name: "\u659C\u3081\u5F8C\u65B9\uFF08\u53F3\uFF09"
+    offset: {x: 0.9, y: 1.55, z: -1.4}
+    lookAt: {x: 0, y: 1, z: 0.35}
+  - name: "\u659C\u3081\u5F8C\u65B9\uFF08\u5DE6\uFF09"
+    offset: {x: -0.9, y: 1.55, z: -1.4}
+    lookAt: {x: 0, y: 1, z: 0.35}
+  - name: "\u53F3\u6A2A"
+    offset: {x: 1.7, y: 1.25, z: 0.25}
+    lookAt: {x: 0, y: 1, z: 0.25}
+  - name: "\u659C\u3081\u524D\uFF08\u53F3\uFF09"
+    offset: {x: 1.3, y: 1.6, z: 1.05}
+    lookAt: {x: 0, y: 1, z: 0.1}
+  viewIndex: 0
+  fieldOfView: 55
+  allowHmdView: 0
+  overlayInHmd: 0
 --- !u!1 &650293972
 GameObject:
   m_ObjectHideFlags: 0
@@ -268,6 +300,8 @@ GameObject:
   - component: {fileID: 650293975}
   - component: {fileID: 650293974}
   - component: {fileID: 650293973}
+  - component: {fileID: 650293978}
+  - component: {fileID: 650293977}
   m_Layer: 0
   m_Name: ExperimenterUI
   m_TagString: Untagged
@@ -292,6 +326,7 @@ MonoBehaviour:
   recorder: {fileID: 0}
   mirror: {fileID: 0}
   panel: {fileID: 0}
+  spectator: {fileID: 0}
 --- !u!114 &650293974
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -309,6 +344,9 @@ MonoBehaviour:
   practice: {fileID: 0}
   mirror: {fileID: 0}
   hotkeys: {fileID: 0}
+  spectator: {fileID: 0}
+  overlay: {fileID: 0}
+  notice: {fileID: 0}
   styleSheet: {fileID: 0}
   visible: 1
   refreshInterval: 0.066
@@ -350,6 +388,48 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &650293977
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 650293972}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 355ed754f7b4afc428fa351ea3cf6598, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.UI::ExtraLimb.UI.HmdNotice
+  session: {fileID: 0}
+  hmdCamera: {fileID: 0}
+  theme: {fileID: -4733365628477956816, guid: 0800c56df19a87d46b558b2ebfbe55c3, type: 3}
+  distance: 1.2
+  heightOffset: -0.08
+  size: {x: 0.56, y: 0.14}
+  resolution: {x: 1024, y: 256}
+  fontSize: 110
+  defaultSeconds: 2.5
+  notifyConditionChanges: 1
+  conditionChangedText: "\u6761\u4EF6\u304C\u5909\u308F\u308A\u307E\u3059"
+  fallbackToMonitor: 1
+--- !u!114 &650293978
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 650293972}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 06d818e0976645641947ec443141ed38, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.UI::ExtraLimb.UI.DebugOverlay
+  session: {fileID: 0}
+  show: 1
+  lineWidth: 0.005
+  baseSize: 0.025
+  triggerBarLength: 0.12
+  circleSegments: 64
 --- !u!1001 &1084454627
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -186,6 +186,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "NextView",
+                    "type": "Button",
+                    "id": "58b030d8-11ec-4451-a55e-256321b11d44",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "TogglePanel",
                     "type": "Button",
                     "id": "731cb210-ca7a-4a71-9fdd-8464f2e98556",
@@ -523,6 +532,17 @@
                     "processors": "",
                     "groups": "",
                     "action": "ToggleMirror",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "c04cdae5-f81a-4bd4-94a4-f82f190f467b",
+                    "path": "<Keyboard>/v",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "NextView",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

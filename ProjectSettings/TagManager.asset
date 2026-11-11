@@ -61,8 +61,8 @@ TagManager:
   - 
   - 
   - 
-  - 
-  - 
+  - ExtraLimbMonitorOnly
+  - ExtraLimbHmdOnly
   - 
   m_SortingLayers:
   - name: Default

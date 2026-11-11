@@ -633,6 +633,8 @@ namespace ExtraLimb.Experiment
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             go.name = markerName;
             Destroy(go.GetComponent<Collider>());
+            // IKターゲットの目印は実験者のための可視化なので、モニタにだけ描く（Step 4-2b）
+            go.layer = DisplayLayers.MonitorOnly;
             go.transform.SetParent(transform, false);
             go.transform.localScale = Vector3.one * size;
             var material = new Material(Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default"));

@@ -46,6 +46,7 @@ namespace ExtraLimb.UI
             ("Marker", "マーカーを入れる"),
             ("SaveConfig", "今の設定を JSON に保存"),
             ("ToggleMirror", "鏡を出す・隠す"),
+            ("NextView", "モニタの視点を切り替える（最後は HMD の映像）"),
             ("TogglePanel", "実験者パネルを出す・隠す"),
         };
 
@@ -59,6 +60,8 @@ namespace ExtraLimb.UI
         [SerializeField] AvatarMirror mirror;
         [Tooltip("空なら同じ GameObject かシーンから探す")]
         [SerializeField] ExperimenterPanel panel;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] SpectatorCamera spectator;
 
         InputActionAsset runtimeActions;
         InputActionMap map;
@@ -104,6 +107,7 @@ namespace ExtraLimb.UI
             if (mirror == null) mirror = FindFirstObjectByType<AvatarMirror>();
             if (panel == null) panel = GetComponent<ExperimenterPanel>();
             if (panel == null) panel = FindFirstObjectByType<ExperimenterPanel>();
+            if (spectator == null) spectator = FindFirstObjectByType<SpectatorCamera>();
 
             var source = actions != null ? actions : Resources.Load<InputActionAsset>(ResourcePath);
             if (source == null)
@@ -150,6 +154,7 @@ namespace ExtraLimb.UI
             Bind("Marker", origin => recorder?.InsertMarker(origin));
             Bind("SaveConfig", origin => recorder?.SaveCurrentConfig(origin));
             Bind("ToggleMirror", _ => ToggleMirror(mirror, session));
+            Bind("NextView", _ => spectator?.NextView());
             Bind("TogglePanel", _ =>
             {
                 if (panel != null) panel.Visible = !panel.Visible;

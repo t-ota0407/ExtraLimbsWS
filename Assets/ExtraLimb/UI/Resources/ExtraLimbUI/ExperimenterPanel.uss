@@ -31,17 +31,17 @@
 
 /* ---- 右のパネル ---- */
 
+/* 画面の右端に寄せる。第三者視点のカメラはこの幅を除いた左側に描く */
 .el-panel {
     position: absolute;
-    right: 8px;
-    top: 8px;
-    bottom: 8px;
-    width: 440px;
-    background-color: rgba(24, 26, 31, 0.92);
-    border-radius: 6px;
-    border-width: 1px;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 448px;
+    background-color: rgb(24, 26, 31);
+    border-left-width: 1px;
     border-color: rgb(60, 64, 72);
-    padding: 4px;
+    padding: 6px 4px 4px 6px;
 }
 
 .el-panel__title {

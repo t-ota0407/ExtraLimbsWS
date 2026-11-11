@@ -39,6 +39,12 @@ namespace ExtraLimb.UI
         [SerializeField] AvatarMirror mirror;
         [Tooltip("空なら同じ GameObject かシーンから探す")]
         [SerializeField] HotkeyMap hotkeys;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] SpectatorCamera spectator;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] DebugOverlay overlay;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] HmdNotice notice;
         [Tooltip("見た目。空なら Resources の StyleResourcePath から読む")]
         [SerializeField] StyleSheet styleSheet;
         [Tooltip("パネルを出すか（ホットキー H で切り替える）。上の大きな表示はいつも出す")]
@@ -85,7 +91,9 @@ namespace ExtraLimb.UI
         Label graspLabel, bodyMessage, recordStatus, recordFolder, recordMessage, practiceLabel;
         TextField heightField, shoulderField;
         Button recordButton;
-        Toggle markerToggle, mirrorToggle;
+        Toggle markerToggle, mirrorToggle, overlayToggle, overlayHmdToggle;
+        Label viewLabel, noticeLabel;
+        TextField noticeField;
         VisualElement hotkeyList;
 
         /// <summary>パネルを出しているか（上の大きな表示はいつも出す）。</summary>
@@ -118,6 +126,9 @@ namespace ExtraLimb.UI
             if (mirror == null) mirror = FindFirstObjectByType<AvatarMirror>();
             if (hotkeys == null) hotkeys = GetComponent<HotkeyMap>();
             if (hotkeys == null) hotkeys = FindFirstObjectByType<HotkeyMap>();
+            if (spectator == null) spectator = FindFirstObjectByType<SpectatorCamera>();
+            if (overlay == null) overlay = FindFirstObjectByType<DebugOverlay>();
+            if (notice == null) notice = FindFirstObjectByType<HmdNotice>();
             if (styleSheet == null) styleSheet = Resources.Load<StyleSheet>(StyleResourcePath);
             // UIDocument を入れ直すと要素が作り直されるので、次の Update で組み立て直す
             built = false;
@@ -126,9 +137,17 @@ namespace ExtraLimb.UI
         void Update()
         {
             if (!built) TryBuild();
+            // 第三者視点はパネルの左に描く
+            if (spectator != null) spectator.RightMarginPixels = built && visible && panel != null ? PanelWidth() : 0f;
             if (!built || Time.unscaledTime < nextRefresh) return;
             nextRefresh = Time.unscaledTime + refreshInterval;
             Refresh();
+        }
+
+        float PanelWidth()
+        {
+            float width = panel.resolvedStyle.width;
+            return float.IsNaN(width) || width <= 0f ? 448f : width;
         }
 
         // ---- 組み立て ----
@@ -386,21 +405,60 @@ namespace ExtraLimb.UI
 
         void BuildDisplaySection(VisualElement parent)
         {
-            var section = Section(parent, "表示", false);
-            markerToggle = new Toggle { text = "手首のIKターゲット（右は水色、左は桃色の球）" };
-            markerToggle.AddToClassList("el-toggle");
-            markerToggle.RegisterValueChangedCallback(evt => session.ShowTargetMarker = evt.newValue);
-            section.Add(markerToggle);
+            var section = Section(parent, "モニタと HMD の表示", true);
+            if (spectator != null)
+            {
+                var view = Row(section);
+                viewLabel = Text("", null, view);
+                viewLabel.style.flexGrow = 1;
+                Btn(view, "次の視点（V）", () => spectator.NextView());
+            }
+            if (overlay != null)
+            {
+                overlayToggle = AddToggle(section, "モニタに可視化（基準点・変位・届く範囲・トリガー）", value => overlay.Show = value);
+            }
+            if (spectator != null)
+            {
+                overlayHmdToggle = AddToggle(section, "参加者（HMD）にも可視化を見せる（フェーズC）", value =>
+                {
+                    if (spectator.OverlayInHmd != value) Act(() => spectator.OverlayInHmd = value);
+                });
+            }
+            markerToggle = AddToggle(section, "手首のIKターゲット（右は水色、左は桃色の球。モニタだけ）", value => session.ShowTargetMarker = value);
             if (mirror != null)
             {
-                mirrorToggle = new Toggle { text = "鏡（M）" };
-                mirrorToggle.AddToClassList("el-toggle");
-                mirrorToggle.RegisterValueChangedCallback(evt =>
+                mirrorToggle = AddToggle(section, "鏡（M）", value =>
                 {
-                    if (mirror.Visible != evt.newValue) Act(() => HotkeyMap.ToggleMirror(mirror, session));
+                    if (mirror.Visible != value) Act(() => HotkeyMap.ToggleMirror(mirror, session));
                 });
-                section.Add(mirrorToggle);
             }
+            if (notice != null)
+            {
+                Text("HMD への通知", "el-muted", section);
+                var custom = Row(section);
+                noticeField = new TextField { value = "" };
+                noticeField.AddToClassList("el-field");
+                noticeField.style.width = 220;
+                custom.Add(noticeField);
+                Btn(custom, "HMD に出す", () =>
+                {
+                    if (!string.IsNullOrWhiteSpace(noticeField.value)) notice.Show(noticeField.value.Trim());
+                });
+                var presets = Row(section);
+                Btn(presets, "条件が変わります", () => notice.Show("条件が変わります"));
+                Btn(presets, "カウントダウン（3, 2, 1）", () => notice.Countdown());
+                Btn(presets, "消す", () => notice.Clear());
+                noticeLabel = Text("", "el-muted", section);
+            }
+        }
+
+        Toggle AddToggle(VisualElement parent, string text, Action<bool> onChange)
+        {
+            var toggle = new Toggle { text = text };
+            toggle.AddToClassList("el-toggle");
+            toggle.RegisterValueChangedCallback(evt => onChange(evt.newValue));
+            parent.Add(toggle);
+            return toggle;
         }
 
         void BuildHotkeySection(VisualElement parent)
@@ -583,6 +641,7 @@ namespace ExtraLimb.UI
                 sub.Append("記録していません（L で始める）");
             }
             if (session.Selected != null && session.HasLeftLimb) sub.Append($"　設定中：{session.Selected.Label}の追加肢");
+            if (notice != null && notice.CurrentText.Length > 0) sub.Append($"　<color=#ffd678>HMD：{notice.CurrentText}</color>");
             SetText(bannerSub, sub.ToString());
             bannerSub.EnableInClassList("el-warn", recorder != null && !recorder.IsRecording);
         }
@@ -771,6 +830,17 @@ namespace ExtraLimb.UI
         {
             markerToggle?.SetValueWithoutNotify(session.ShowTargetMarker);
             if (mirror != null) mirrorToggle?.SetValueWithoutNotify(mirror.Visible);
+            if (overlay != null) overlayToggle?.SetValueWithoutNotify(overlay.Show);
+            if (spectator != null)
+            {
+                overlayHmdToggle?.SetValueWithoutNotify(spectator.OverlayInHmd);
+                SetText(viewLabel, $"モニタの視点：{spectator.ViewName}");
+            }
+            if (notice != null && noticeLabel != null)
+            {
+                string where = notice.OnHmd ? "HMD" : "HMD のカメラがないので、確認用にモニタ";
+                SetText(noticeLabel, notice.CurrentText.Length > 0 ? $"表示中（{where}）：{notice.CurrentText}" : "表示していません");
+            }
         }
     }
 }

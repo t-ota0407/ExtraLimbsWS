@@ -95,6 +95,12 @@ namespace ExtraLimb.Experiment
         /// <summary>鏡を出した・隠した（old・new＝true / false）。</summary>
         public const string Mirror = "mirror";
 
+        /// <summary>HMD に通知を出した（new＝出した文）。</summary>
+        public const string HmdNotice = "hmd_notice";
+
+        /// <summary>実験者のための可視化を参加者（HMD）にも見せる・見せない（old・new＝true / false）。</summary>
+        public const string OverlayInHmd = "overlay_hmd";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }
