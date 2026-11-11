@@ -17,6 +17,7 @@ namespace ExtraLimb.Experiment
     /// </list>
     /// 掴んだ瞬間に、そのコントローラーを短く振動させる。各追加肢の掴む点（手のひらのあたり）に小さな球を出し、
     /// 掴める物が近いと黄色、掴んでいると緑にする。シーンになければ LimbSession が起動時に追加する。
+    /// 掴む・放すは LimbSession のイベント（grasp / release）としても出す（Step 4-1。記録に残る）。
     /// </summary>
     [DefaultExecutionOrder(10016)]
     public class GraspRig : MonoBehaviour
@@ -54,6 +55,7 @@ namespace ExtraLimb.Experiment
             public EndEffectorGrasper grasper;
             public readonly HysteresisSwitch trigger = new HysteresisSwitch();
             public float triggerValue;
+            public string grabOrigin = ChangeOrigins.Trigger;
             public Transform indicator;
             public Material indicatorMaterial;
         }
@@ -87,7 +89,14 @@ namespace ExtraLimb.Experiment
         /// <summary>G キーで掴んでいるか。</summary>
         public bool KeyPressed { get; private set; }
 
+        /// <summary>そのコントローラーのグリップの押し込み量（0〜1、本来の手）。</summary>
+        public float GripValue(ControllerHand hand) => hand == ControllerHand.Left ? leftGripValue : rightGripValue;
+
+        float leftGripValue, rightGripValue;
+
         public IControllerInput Controllers => ControllerInput.Provider;
+
+        static readonly string KeyGOrigin = ChangeOrigins.Key("G");
 
         static GraspTriggerConfig ConfigOf(LimbChannel channel) => channel.Config.grasp ?? DefaultConfig;
         static readonly GraspTriggerConfig DefaultConfig = new GraspTriggerConfig();
@@ -105,8 +114,17 @@ namespace ExtraLimb.Experiment
                     var hand = new LimbHand { channel = channel };
                     string side = channel.Side == LimbSide.Left ? "left" : "right";
                     hand.grasper = CreateGrasper($"ExtraLimb_Grasp_{side}", $"extra_limb_{side}", limbRadius, () => LimbPose(channel));
-                    hand.grasper.Grabbed += target => OnGrabbed(hand.grasper, target, ConfigOf(channel).hand);
-                    hand.grasper.Released += target => Debug.Log($"[ExtraLimb] {channel.Label}の追加肢が「{target.name}」を放しました");
+                    hand.grasper.Grabbed += target =>
+                    {
+                        OnGrabbed(hand.grasper, target, ConfigOf(channel).hand);
+                        RaiseGrasp(SessionEventTypes.Grasp, channel.Subject, hand.grabOrigin, hand.grasper, target, $"{channel.Label}の追加肢が「{target.name}」を掴みました");
+                    };
+                    hand.grasper.Released += target =>
+                    {
+                        Debug.Log($"[ExtraLimb] {channel.Label}の追加肢が「{target.name}」を放しました");
+                        string origin = channel.Active ? hand.grabOrigin : ChangeOrigins.System;
+                        RaiseGrasp(SessionEventTypes.Release, channel.Subject, origin, hand.grasper, target, $"{channel.Label}の追加肢が「{target.name}」を放しました");
+                    };
                     if (showIndicator) CreateIndicator(hand, side);
                     limbHands.Add(hand);
                 }
@@ -122,12 +140,22 @@ namespace ExtraLimb.Experiment
                 if (leftBone != null)
                 {
                     leftHand = CreateGrasper("Hand_Left_Grasp", "hand_left", handRadius, () => HandPose(leftBone, leftPalm));
-                    leftHand.Grabbed += target => OnGrabbed(leftHand, target, ControllerHand.Left);
+                    leftHand.Grabbed += target =>
+                    {
+                        OnGrabbed(leftHand, target, ControllerHand.Left);
+                        RaiseGrasp(SessionEventTypes.Grasp, "hand_left", ChangeOrigins.Grip, leftHand, target, $"左手が「{target.name}」を掴みました");
+                    };
+                    leftHand.Released += target => RaiseGrasp(SessionEventTypes.Release, "hand_left", ChangeOrigins.Grip, leftHand, target, $"左手が「{target.name}」を放しました");
                 }
                 if (rightBone != null)
                 {
                     rightHand = CreateGrasper("Hand_Right_Grasp", "hand_right", handRadius, () => HandPose(rightBone, rightPalm));
-                    rightHand.Grabbed += target => OnGrabbed(rightHand, target, ControllerHand.Right);
+                    rightHand.Grabbed += target =>
+                    {
+                        OnGrabbed(rightHand, target, ControllerHand.Right);
+                        RaiseGrasp(SessionEventTypes.Grasp, "hand_right", ChangeOrigins.Grip, rightHand, target, $"右手が「{target.name}」を掴みました");
+                    };
+                    rightHand.Released += target => RaiseGrasp(SessionEventTypes.Release, "hand_right", ChangeOrigins.Grip, rightHand, target, $"右手が「{target.name}」を放しました");
                 }
             }
 
@@ -173,14 +201,18 @@ namespace ExtraLimb.Experiment
                 hand.triggerValue = input.GetTrigger(config.hand);
                 bool controller = config.UsesController && hand.trigger.Update(hand.triggerValue);
                 bool key = config.UsesKey && KeyPressed && hand.channel == selected;
+                // 掴んだのがトリガーか G キーか（記録用。掴む前に決めておく）
+                if (!hand.grasper.Pressed) hand.grabOrigin = controller ? ChangeOrigins.Trigger : KeyGOrigin;
                 // 隠している追加肢は掴まない（掴んでいた物は放す）
                 hand.grasper.Pressed = hand.channel.Active && (controller || key);
             }
 
             leftGrip.On = rightGrip.On = gripPressThreshold;
             leftGrip.Off = rightGrip.Off = gripReleaseThreshold;
-            if (leftHand != null) leftHand.Pressed = leftGrip.Update(input.GetGrip(ControllerHand.Left));
-            if (rightHand != null) rightHand.Pressed = rightGrip.Update(input.GetGrip(ControllerHand.Right));
+            leftGripValue = input.GetGrip(ControllerHand.Left);
+            rightGripValue = input.GetGrip(ControllerHand.Right);
+            if (leftHand != null) leftHand.Pressed = leftGrip.Update(leftGripValue);
+            if (rightHand != null) rightHand.Pressed = rightGrip.Update(rightGripValue);
         }
 
         // 掴む点の表示（手を動かした後に置く）
@@ -203,6 +235,14 @@ namespace ExtraLimb.Experiment
         {
             Controllers.Vibrate(hand, hapticAmplitude, hapticSeconds);
             Debug.Log($"[ExtraLimb] {Describe(grasper)}が「{target.name}」を掴みました");
+        }
+
+        // 掴む・放すをイベントにする。new は掴む点の位置（ワールド、m）
+        void RaiseGrasp(string type, string subject, string origin, EndEffectorGrasper grasper, Graspable target, string message)
+        {
+            if (session == null) return;
+            var p = grasper.transform.position;
+            session.Raise(type, subject, target != null ? target.name : "", "", $"{CsvRow.Format(p.x, 4)} {CsvRow.Format(p.y, 4)} {CsvRow.Format(p.z, 4)}", message, origin);
         }
 
         /// <summary>手の表示名。</summary>

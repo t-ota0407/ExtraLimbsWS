@@ -271,7 +271,10 @@ namespace ExtraLimb.Experiment
             string target = targetIndex >= 0 && targetIndex < buttons.Count ? buttons[targetIndex].label : "—";
             GUILayout.Label($"仮のボタン：押した数 {hits}　直前 {lastSeconds:F2} 秒　対象「{target}」　立方体を掴んだ数 {grabs}");
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Re-centerして並べ直す")) session.RequestRecenter();
+            if (GUILayout.Button("Re-centerして並べ直す"))
+            {
+                using (session.WithOrigin(ChangeOrigins.Panel)) session.RequestRecenter();
+            }
             if (GUILayout.Button("立方体を戻す")) ResetCubes();
             if (GUILayout.Button("数を0に戻す"))
             {

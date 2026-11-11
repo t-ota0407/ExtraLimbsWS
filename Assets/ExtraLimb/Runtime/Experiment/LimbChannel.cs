@@ -25,6 +25,9 @@ namespace ExtraLimb.Experiment
         /// <summary>パネルに出す名前（「右」「左」）。</summary>
         public string Label => Side == LimbSide.Left ? "左" : "右";
 
+        /// <summary>記録に使う名前（right / left）。</summary>
+        public string Subject => Side == LimbSide.Left ? "left" : "right";
+
         public ExtraLimbRig Limb { get; }
 
         /// <summary>付け根を動かす部品（なければ Attach Point は固定）。</summary>
@@ -92,6 +95,8 @@ namespace ExtraLimb.Experiment
         {
             mountCompletedPending = true;
             Config.attachPointId = definition.id;
+            owner.Raise(SessionEventTypes.Mount, Subject, "attachPointId", "", definition.id,
+                $"{Label}の追加肢：「{definition.displayName}」への付け替えが終わりました", ChangeOrigins.System);
         }
 
         internal void OnGeometryChanged() => geometryChanged = true;
@@ -113,9 +118,9 @@ namespace ExtraLimb.Experiment
 
         /// <summary>
         /// 設定を差し替える（複製して持つ）。制御方式が変わったらターゲットを基準位置に戻す。
-        /// Attach Point が変わったら付け替えを始める。
+        /// Attach Point が変わったら付け替えを始める。外からは LimbSession.Apply(channel, config) を使う（記録に残すため）。
         /// </summary>
-        public void Apply(LimbRuntimeConfig newConfig)
+        internal void Apply(LimbRuntimeConfig newConfig)
         {
             string previousAttachPoint = Config.attachPointId;
             Config = (newConfig ?? new LimbRuntimeConfig()).Clone();
@@ -156,6 +161,8 @@ namespace ExtraLimb.Experiment
                     recenterRequested = false;
                     recentered = true;
                     Debug.Log($"[ExtraLimb] {Label}の追加肢：Re-center（基準 {ReferenceId}、入力 {InputId}）");
+                    owner.Raise(SessionEventTypes.Recenter, Subject, "input", "", InputId,
+                        $"{Label}の追加肢：Re-center（基準 {ReferenceId}、入力 {InputId}）", ChangeOrigins.System);
                     if (loadForwardPending) LoadForward();
                 }
                 else if (!wasInputValid)
@@ -167,6 +174,9 @@ namespace ExtraLimb.Experiment
                 if (recentered) HasChannelRange = false;
                 UpdateChannelRange(Pipeline.LastChannels);
             }
+            if (IsInputValid != wasInputValid)
+                owner.Raise(SessionEventTypes.Tracking, Subject, "valid", wasInputValid ? "1" : "0", IsInputValid ? "1" : "0",
+                    $"{Label}の追加肢：{StatusMessage}", ChangeOrigins.System);
             wasInputValid = IsInputValid;
 
             // 追跡が切れている間は、最後のターゲットのまま保つ
@@ -187,16 +197,21 @@ namespace ExtraLimb.Experiment
         {
             forwardRequested = false;
             var horizontal = Vector3.ProjectOnPlane(Pipeline.Calibrator.Compute(referencePose, inputPose).position, Pipeline.BodyFrame.Up);
+            bool hadForward = Pipeline.BodyFrame.HasForward;
+            string previous = hadForward ? VectorText(Pipeline.BodyFrame.Forward) : "";
             if (Pipeline.TryRecordForward(referencePose, inputPose, owner.MinForwardGestureMeters))
             {
                 ForwardMessage = $"前を記録しました（水平の変位 {horizontal.magnitude * 100f:F1} cm）";
                 owner.OnForwardRecorded(this);
                 Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {Pipeline.BodyFrame.Forward.ToString("F2")}");
+                owner.Raise(SessionEventTypes.Forward, Subject, ReferenceId, previous, VectorText(Pipeline.BodyFrame.Forward),
+                    $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
             }
             else
             {
                 ForwardMessage = $"前を記録できません：水平の変位が {horizontal.magnitude * 100f:F1} cm（{owner.MinForwardGestureMeters * 100f:F0} cm 以上、前へ出して押す）";
                 Debug.LogWarning($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}");
+                owner.Raise(SessionEventTypes.ForwardFailed, Subject, ReferenceId, "", "", $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
             }
         }
 
@@ -206,11 +221,20 @@ namespace ExtraLimb.Experiment
             string reference = SourceSelector.SelectReference(registry, Config.referenceSourceId, input);
             if (reference == ReferenceId && input == InputId) return;
             if (reference != ReferenceId) loadForwardPending = true;
+            if (input != InputId)
+                owner.Raise(SessionEventTypes.Sources, Subject, "input", InputId, input,
+                    $"{Label}の追加肢：入力を {input ?? "なし"} に（{BodySiteNames.Japanese(Config.inputSite)}）", ChangeOrigins.System);
+            if (reference != ReferenceId)
+                owner.Raise(SessionEventTypes.Sources, Subject, "reference", ReferenceId, reference,
+                    $"{Label}の追加肢：基準を {reference ?? "なし"} に", ChangeOrigins.System);
             ReferenceId = reference;
             InputId = input;
             recenterRequested = true;
             Debug.Log($"[ExtraLimb] {Label}の追加肢：基準 {ReferenceId ?? "なし"}、入力 {InputId ?? "なし"}");
         }
+
+        static string VectorText(Vector3 v) =>
+            $"{CsvRow.Format(v.x, 4)} {CsvRow.Format(v.y, 4)} {CsvRow.Format(v.z, 4)}";
 
         /// <summary>今の基準で保存してある前の向きを使う（なければ未記録に戻す）。</summary>
         internal void LoadForward()

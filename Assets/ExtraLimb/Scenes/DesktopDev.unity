@@ -609,6 +609,8 @@ GameObject:
   - component: {fileID: 1782451044}
   - component: {fileID: 1782451043}
   - component: {fileID: 1782451042}
+  - component: {fileID: 1782451046}
+  - component: {fileID: 1782451045}
   m_Layer: 0
   m_Name: ExtraLimb
   m_TagString: Untagged
@@ -635,6 +637,10 @@ MonoBehaviour:
   - {x: 0.15, y: 0, z: 0.05}
   - {x: 0, y: 0, z: 0.16}
   buttonSize: 0.06
+  cubeWristOffsets:
+  - {x: -0.08, y: -0.12, z: 0.1}
+  - {x: 0.1, y: -0.12, z: 0.1}
+  cubeSize: 0.05
   pressRadius: 0.05
   showGui: 1
 --- !u!114 &1782451043
@@ -662,22 +668,71 @@ MonoBehaviour:
     velocityGain: 3
     deadzoneCm: 2
     hybridRadiusCm: 8
+    mappingPresetId: 
     axisMapping:
-      x: 0
-      y: 2
-      z: 4
-      scale: {x: 1, y: 1, z: 1}
+      right:
+        channel: 1
+        scale: 1
+      up:
+        channel: 2
+        scale: 1
+      forward:
+        channel: 3
+        scale: 1
+      leverLength: 0.3
     filter:
       enabled: 1
       minCutoff: 1.5
       beta: 5
       derivativeCutoff: 1
     grasp:
-      kind: 2
-      twistAxis: 4
-      onAngleDeg: 25
-      offAngleDeg: 15
+      input: 3
+      hand: 1
+      pressThreshold: 0.6
+      releaseThreshold: 0.4
+  leftLimb: {fileID: 0}
+  twoLimbs: 0
+  leftConfig:
+    attachPointId: shoulder_top
+    inputSite: 9
+    inputSourceId: 
+    referenceSourceId: 
+    mode: 0
+    positionGain: 2
+    velocityGain: 3
+    deadzoneCm: 2
+    hybridRadiusCm: 8
+    mappingPresetId: 
+    axisMapping:
+      right:
+        channel: 1
+        scale: 1
+      up:
+        channel: 2
+        scale: 1
+      forward:
+        channel: 3
+        scale: 1
+      leverLength: 0.3
+    filter:
+      enabled: 1
+      minCutoff: 1.5
+      beta: 5
+      derivativeCutoff: 1
+    grasp:
+      input: 3
+      hand: 0
+      pressThreshold: 0.6
+      releaseThreshold: 0.4
   inputSites: 0b00000009000000050000000d000000
+  mappingPresets: []
+  mappingPresetResourcePath: ExtraLimbMappings
+  showChannelPanel: 1
+  channelPanelCollapsed: 0
+  channelPanelPosition: {x: 10, y: 150}
+  createGraspRig: 1
+  movingThresholdCmPerSecond: 15
+  recentMotionSeconds: 4
   minForwardGestureCm: 5
   showTargetMarker: 1
   showGui: 1
@@ -696,6 +751,51 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1782451045
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1782451041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 085aac979e4d47d4ca1002d6ce63e3ac, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.ExperimentRecorder
+  session: {fileID: 0}
+  registryHost: {fileID: 0}
+  autoStart: 1
+  rootDirectory: 
+  sessionLabel: 
+  frameStride: 1
+  flushIntervalSeconds: 1
+  trackerSites: 0b00000009000000050000000d00000001000000030000000600000007000000
+  showGui: 1
+  panelOffset: {x: 450, y: 2}
+--- !u!114 &1782451046
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1782451041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b9a03bd2c94279a409991db9d576f679, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.GraspRig
+  session: {fileID: 0}
+  avatar: {fileID: 0}
+  limbRadius: 0.08
+  handRadius: 0.06
+  naturalHands: 1
+  gripPressThreshold: 0.6
+  gripReleaseThreshold: 0.4
+  hapticAmplitude: 0.6
+  hapticSeconds: 0.08
+  showIndicator: 1
+  indicatorSize: 0.025
 --- !u!1 &2135716649
 GameObject:
   m_ObjectHideFlags: 0
