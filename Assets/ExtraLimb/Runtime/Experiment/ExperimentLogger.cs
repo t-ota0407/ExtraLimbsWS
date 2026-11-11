@@ -35,9 +35,13 @@ namespace ExtraLimb.Experiment
         StreamWriter frames, events, configHistory;
         readonly CsvRow eventRow = new CsvRow();
         readonly SessionInfo info;
+        readonly Dictionary<string, StreamWriter> tables = new Dictionary<string, StreamWriter>();
 
         /// <summary>このセッションのフォルダ（絶対パス）。</summary>
         public string Directory { get; }
+
+        /// <summary>フォルダ名に付けた名前（参加者IDなど。なければ空文字）。</summary>
+        public string Label => info.label ?? "";
 
         public bool IsOpen => frames != null;
         public int FrameRows { get; private set; }
@@ -140,6 +144,23 @@ namespace ExtraLimb.Experiment
             ConfigRows++;
         }
 
+        /// <summary>
+        /// セッションのフォルダの表（例：conditions.csv、Step 4-3）に1行書く（すぐにファイルへ書き出す）。
+        /// 最初の1行のときにファイルを作り、columns を見出しに書く。UTF-8（BOM 付き）。
+        /// </summary>
+        public void WriteTableRow(string fileName, IReadOnlyList<string> columns, CsvRow row)
+        {
+            if (frames == null || row == null || string.IsNullOrEmpty(fileName)) return;
+            if (!tables.TryGetValue(fileName, out var writer))
+            {
+                writer = Create(Sanitize(fileName), Utf8WithBom, autoFlush: true);
+                writer.WriteLine(CsvRow.Join(columns ?? Array.Empty<string>()));
+                tables[fileName] = writer;
+            }
+            writer.Write(row.ToString());
+            writer.Write('\n');
+        }
+
         /// <summary>セッションのフォルダに JSON を1つ保存して、その絶対パスを返す。同じ名前があれば _2 … を付ける。</summary>
         public string SaveJson(string fileName, string json)
         {
@@ -167,6 +188,8 @@ namespace ExtraLimb.Experiment
             frames.Dispose();
             events.Dispose();
             configHistory.Dispose();
+            foreach (var table in tables.Values) table.Dispose();
+            tables.Clear();
             frames = events = configHistory = null;
             info.endedAt = DateTime.Now.ToString("o", CultureInfo.InvariantCulture);
             info.frameRows = FrameRows;

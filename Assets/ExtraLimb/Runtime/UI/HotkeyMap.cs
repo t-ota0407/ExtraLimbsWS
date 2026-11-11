@@ -26,6 +26,12 @@ namespace ExtraLimb.UI
         /// <summary>アクションの名前と説明（パネルのホットキー一覧の順）。</summary>
         public static readonly (string action, string description)[] Descriptions =
         {
+            ("NextCondition", "次の条件を読み込む（Step 4-3）"),
+            ("PrevCondition", "前の条件を読み込む"),
+            ("StartTrial", "課題を始める（案内 → カウントダウン → 前半1分 → 後半1分）"),
+            ("AbortTrial", "課題を中止する（同じ条件の準備に戻る）"),
+            ("RedoCondition", "今の条件をやり直す"),
+            ("Rating", "口頭評価 1〜7（評価の入力中。3項目を順に）"),
             ("Recenter", "Re-center（動かしている追加肢すべて）"),
             ("RecordForward", "前を記録（設定している追加肢）"),
             ("AttachPoint1", "生やす位置 1（肩の上）"),
@@ -62,6 +68,8 @@ namespace ExtraLimb.UI
         [SerializeField] ExperimenterPanel panel;
         [Tooltip("空ならシーンから探す")]
         [SerializeField] SpectatorCamera spectator;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] ConditionRunner runner;
 
         InputActionAsset runtimeActions;
         InputActionMap map;
@@ -108,6 +116,7 @@ namespace ExtraLimb.UI
             if (panel == null) panel = GetComponent<ExperimenterPanel>();
             if (panel == null) panel = FindFirstObjectByType<ExperimenterPanel>();
             if (spectator == null) spectator = FindFirstObjectByType<SpectatorCamera>();
+            if (runner == null) runner = FindFirstObjectByType<ConditionRunner>();
 
             var source = actions != null ? actions : Resources.Load<InputActionAsset>(ResourcePath);
             if (source == null)
@@ -159,6 +168,12 @@ namespace ExtraLimb.UI
             {
                 if (panel != null) panel.Visible = !panel.Visible;
             });
+            Bind("NextCondition", _ => runner?.Next());
+            Bind("PrevCondition", _ => runner?.Previous());
+            Bind("StartTrial", _ => runner?.StartTrial());
+            Bind("AbortTrial", _ => runner?.Abort());
+            Bind("RedoCondition", _ => runner?.Redo());
+            BindRating();
             graspAction = map.FindAction("Grasp");
             map.Enable();
         }
@@ -192,15 +207,55 @@ namespace ExtraLimb.UI
                 Debug.LogWarning($"[ExtraLimb] ホットキーのアセットに「{name}」がありません", this);
                 return;
             }
-            Action<InputAction.CallbackContext> handler = _ =>
+            // 割り当てが複数（Enter とテンキーの Enter など）なら、押したキーの名前を出どころにする
+            bool alternatives = action.bindings.Count > 1 && !action.bindings[0].isComposite;
+            Action<InputAction.CallbackContext> handler = context =>
             {
                 if (IsTyping) return;
-                string origin = ChangeOrigins.Key(action.GetBindingDisplayString());
+                string key = alternatives && context.control != null ? context.control.displayName : action.GetBindingDisplayString();
+                string origin = ChangeOrigins.Key(key);
                 using (session != null ? session.WithOrigin(origin) : default)
                     run(origin);
             };
             action.performed += handler;
             handlers.Add((action, handler));
+        }
+
+        // 口頭評価：押した数字（1〜7、テンキーも）を、評価の入力中の項目に入れる。
+        // Ctrl+1〜4（入力の部位）を押したときにも数字の割り当てが反応するので、修飾キーを押している間は無視する
+        void BindRating()
+        {
+            var action = map.FindAction("Rating");
+            if (action == null)
+            {
+                Debug.LogWarning("[ExtraLimb] ホットキーのアセットに「Rating」がありません", this);
+                return;
+            }
+            Action<InputAction.CallbackContext> handler = context =>
+            {
+                if (IsTyping || runner == null || ModifierPressed()) return;
+                int value = RatingValue(context.control);
+                if (value < 1) return;
+                using (session != null ? session.WithOrigin(ChangeOrigins.Key(context.control.displayName)) : default)
+                    runner.EnterRating(value);
+            };
+            action.performed += handler;
+            handlers.Add((action, handler));
+        }
+
+        /// <summary>押したキーの数字（1〜9。数字のキーでなければ 0）。</summary>
+        public static int RatingValue(InputControl control)
+        {
+            if (control == null) return 0;
+            string name = control.name;
+            char last = name.Length > 0 ? name[name.Length - 1] : ' ';
+            return last >= '1' && last <= '9' ? last - '0' : 0;
+        }
+
+        static bool ModifierPressed()
+        {
+            var keyboard = Keyboard.current;
+            return keyboard != null && (keyboard.ctrlKey.isPressed || keyboard.altKey.isPressed || keyboard.shiftKey.isPressed);
         }
 
         void ChangeGain(float delta)

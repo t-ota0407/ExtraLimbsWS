@@ -327,6 +327,7 @@ MonoBehaviour:
   mirror: {fileID: 0}
   panel: {fileID: 0}
   spectator: {fileID: 0}
+  runner: {fileID: 0}
 --- !u!114 &650293974
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -347,6 +348,7 @@ MonoBehaviour:
   spectator: {fileID: 0}
   overlay: {fileID: 0}
   notice: {fileID: 0}
+  runner: {fileID: 0}
   styleSheet: {fileID: 0}
   visible: 1
   refreshInterval: 0.066
@@ -408,6 +410,7 @@ MonoBehaviour:
   size: {x: 0.56, y: 0.14}
   resolution: {x: 1024, y: 256}
   fontSize: 110
+  charactersAtFullSize: 8.5
   defaultSeconds: 2.5
   notifyConditionChanges: 1
   conditionChangedText: "\u6761\u4EF6\u304C\u5909\u308F\u308A\u307E\u3059"
@@ -786,6 +789,7 @@ GameObject:
   - component: {fileID: 1782451042}
   - component: {fileID: 1782451046}
   - component: {fileID: 1782451045}
+  - component: {fileID: 1782451047}
   m_Layer: 0
   m_Name: ExtraLimb
   m_TagString: Untagged
@@ -964,6 +968,36 @@ MonoBehaviour:
   hapticSeconds: 0.08
   showIndicator: 1
   indicatorSize: 0.025
+--- !u!114 &1782451047
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1782451041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba9a414ce3dd2fd4a9ab72c9ca02912d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.ConditionRunner
+  session: {fileID: 0}
+  recorder: {fileID: 0}
+  noticeTarget: {fileID: 0}
+  taskTarget: {fileID: 0}
+  timing:
+    leadMessageSeconds: 2.5
+    countdown: 3
+    segmentSeconds: 60
+    interludeMessageSeconds: 3
+  restartRecordingWithParticipant: 1
+  conditionChangedText: "\u6761\u4EF6\u304C\u5909\u308F\u308A\u307E\u3059"
+  segment1Text: "\u8FFD\u52A0\u80A2\u3060\u3051\u3067\u89E6\u308C\u307E\u3059"
+  segment2Text: "\u6B21\u306F\u4E21\u624B\u3082\u4F7F\u3048\u307E\u3059"
+  startText: "\u306F\u3058\u3081"
+  endText: "\u304A\u308F\u308A"
+  abortText: "\u4E2D\u65AD\u3057\u307E\u3059"
+  breakText: "\u4F11\u61A9\u3067\u3059"
+  finishedText: "\u3059\u3079\u3066\u7D42\u308F\u308A\u307E\u3057\u305F"
 --- !u!1 &2135716649
 GameObject:
   m_ObjectHideFlags: 0

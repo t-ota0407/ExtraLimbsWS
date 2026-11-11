@@ -202,3 +202,35 @@
     width: 110px;
     color: rgb(255, 214, 120);
 }
+
+/* ---- 条件の進行（Step 4-3） ---- */
+
+.el-condition {
+    font-size: 15px;
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+}
+
+.el-phase {
+    font-size: 15px;
+}
+
+.el-rating-label {
+    width: 196px;
+    white-space: normal;
+}
+
+.el-button--rating {
+    min-width: 26px;
+    padding: 2px 4px;
+    margin: 1px;
+}
+
+.el-current {
+    color: rgb(255, 214, 120);
+    -unity-font-style: bold;
+}
+
+.el-list-button {
+    -unity-text-align: middle-left;
+}

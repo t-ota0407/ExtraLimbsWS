@@ -130,6 +130,35 @@ namespace ExtraLimb.Tests.EditMode
         }
 
         [Test]
+        public void TableRows_CreateFileWithHeaderOnFirstRow()
+        {
+            string directory;
+            var columns = new[] { "order", "status", "rating_ease" };
+            using (var logger = new ExperimentLogger(root, "table", Columns, new SessionInfo { label = "P01" }))
+            {
+                Assert.That(logger.Label, Is.EqualTo("P01"));
+                directory = logger.Directory;
+                Assert.That(File.Exists(Path.Combine(directory, "conditions.csv")), Is.False, "書くまでは作らない");
+                var row = new CsvRow();
+                logger.WriteTableRow("conditions.csv", columns, row.Clear().Add(1).Add("done").Add(5));
+                logger.WriteTableRow("conditions.csv", columns, row.Clear().Add("practice").Add("aborted").AddEmpty());
+            }
+
+            string path = Path.Combine(directory, "conditions.csv");
+            Assert.That(File.ReadAllBytes(path).Take(3), Is.EqualTo(new byte[] { 0xEF, 0xBB, 0xBF }));
+            Assert.That(File.ReadAllLines(path, Encoding.UTF8), Is.EqualTo(new[] { "order,status,rating_ease", "1,done,5", "practice,aborted," }));
+        }
+
+        [Test]
+        public void ConditionColumns_AreUnique()
+        {
+            var columns = ConditionRunner.ConditionColumns;
+
+            Assert.That(columns.Distinct().Count(), Is.EqualTo(columns.Length));
+            Assert.That(columns, Does.Contain("seg1_hits").And.Contain("seg2_hits").And.Contain("rating_fatigue"));
+        }
+
+        [Test]
         public void WritingAfterClose_IsIgnored()
         {
             var logger = new ExperimentLogger(root, "closed", Columns);

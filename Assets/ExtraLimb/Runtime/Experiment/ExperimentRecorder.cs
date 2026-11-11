@@ -110,6 +110,49 @@ namespace ExtraLimb.Experiment
         /// <summary>保存先のフォルダ（絶対パス）。</summary>
         public string RootDirectory => string.IsNullOrEmpty(rootDirectory) ? ExperimentLogger.DefaultRoot : Path.GetFullPath(rootDirectory);
 
+        /// <summary>次に記録を始めるとき、フォルダ名に付ける名前（参加者IDなど）。ConditionRunner が参加者IDを入れる。</summary>
+        public string SessionLabel
+        {
+            get => sessionLabel;
+            set => sessionLabel = value ?? "";
+        }
+
+        /// <summary>今の記録のフォルダ名に付けた名前（記録していなければ空文字）。</summary>
+        public string CurrentLabel => logger != null ? logger.Label : "";
+
+        /// <summary>今の記録のフォルダの表（例：conditions.csv）に1行書く。記録していなければ何もしないで false。</summary>
+        public bool WriteTableRow(string fileName, IReadOnlyList<string> columns, CsvRow tableRow)
+        {
+            if (!IsRecording) return false;
+            try
+            {
+                logger.WriteTableRow(fileName, columns, tableRow);
+                return true;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                Notify($"{fileName} に書けません：{e.Message}", $"{fileName} に書けません");
+                Debug.LogError($"[ExtraLimb] {message}", this);
+                return false;
+            }
+        }
+
+        /// <summary>今の記録のフォルダに JSON を保存してパスを返す（記録していなければ null）。</summary>
+        public string SaveJson(string fileName, string json)
+        {
+            if (!IsRecording) return null;
+            try
+            {
+                return logger.SaveJson(fileName, json);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                Notify($"{fileName} を保存できません：{e.Message}", $"{fileName} を保存できません");
+                Debug.LogError($"[ExtraLimb] {message}", this);
+                return null;
+            }
+        }
+
         /// <summary>frames.csv の列。</summary>
         public static List<string> FrameColumns(IReadOnlyList<BodySite> sites)
         {

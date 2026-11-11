@@ -17,7 +17,9 @@ namespace ExtraLimb.UI
     /// パネルは画面（モニタ）にだけ描かれ、HMD には映らない。Step 3 までの IMGUI のパネル（追加肢、入力の6つの値、仮のボタン、記録）をここにまとめた。
     /// <list type="bullet">
     /// <item>上の表示：動かしている追加肢ごとに「生やす位置｜入力の部位｜マッピングの型・ゲイン」、記録の状態、追跡が切れたときの警告（赤）。</item>
-    /// <item>パネル：設定する追加肢、入力と状態、マッピングの型、生やす位置、入力の6つの値、把持、体の寸法、記録、仮のボタン、表示、ホットキーの一覧。</item>
+    /// <item>パネル：条件の進行（Step 4-3：参加者IDと提示順、条件の読み込み、課題の開始・中止、口頭評価）、設定する追加肢、入力と状態、
+    /// マッピングの型、生やす位置、入力の6つの値、把持、体の寸法、記録、仮のボタン、表示、ホットキーの一覧。</item>
+    /// <item>上の表示には、条件の進行（何番目の条件か、前半・後半と残り時間）も出す。</item>
     /// </list>
     /// ボタンからの操作は LimbSession などの公開のメソッドを呼び、出どころを panel として記録に残す。
     /// 字は Windows の日本語フォントを使う（UIFonts）。見た目は Resources/ExtraLimbUI/ExperimenterPanel.uss。
@@ -45,6 +47,8 @@ namespace ExtraLimb.UI
         [SerializeField] DebugOverlay overlay;
         [Tooltip("空ならシーンから探す")]
         [SerializeField] HmdNotice notice;
+        [Tooltip("空ならシーンから探す（なければ「条件の進行」の欄を出さない）")]
+        [SerializeField] ConditionRunner runner;
         [Tooltip("見た目。空なら Resources の StyleResourcePath から読む")]
         [SerializeField] StyleSheet styleSheet;
         [Tooltip("パネルを出すか（ホットキー H で切り替える）。上の大きな表示はいつも出す")]
@@ -62,7 +66,18 @@ namespace ExtraLimb.UI
 
         // 上の表示
         readonly List<Label> bannerLines = new List<Label>();
-        Label bannerSub;
+        Label bannerSub, bannerRunner;
+
+        // 条件の進行
+        TextField participantField, rowField;
+        Label planLabel, conditionLabel, phaseLabel, recenterLabel, conditionInstruction, runnerMessage;
+        Button startButton, abortButton, redoButton, prevButton, nextButton, practiceButton;
+        readonly Label[] ratingLabels = new Label[3];
+        readonly Button[,] ratingButtons = new Button[3, ConditionRating.Max];
+        Foldout sequenceSection;
+        VisualElement sequenceList;
+        ConditionPlan listedPlan;
+        readonly List<Button> sequenceButtons = new List<Button>();
 
         // 追加肢
         Button rightButton, leftButton, twoLimbsButton;
@@ -129,6 +144,7 @@ namespace ExtraLimb.UI
             if (spectator == null) spectator = FindFirstObjectByType<SpectatorCamera>();
             if (overlay == null) overlay = FindFirstObjectByType<DebugOverlay>();
             if (notice == null) notice = FindFirstObjectByType<HmdNotice>();
+            if (runner == null) runner = FindFirstObjectByType<ConditionRunner>();
             if (styleSheet == null) styleSheet = Resources.Load<StyleSheet>(StyleResourcePath);
             // UIDocument を入れ直すと要素が作り直されるので、次の Update で組み立て直す
             built = false;
@@ -179,6 +195,9 @@ namespace ExtraLimb.UI
         {
             banner = new VisualElement { pickingMode = PickingMode.Ignore };
             banner.AddToClassList("el-banner");
+            bannerRunner = new Label { pickingMode = PickingMode.Ignore };
+            bannerRunner.AddToClassList("el-banner__line");
+            banner.Add(bannerRunner);
             bannerLines.Clear();
             for (int i = 0; i < 2; i++)
             {
@@ -197,7 +216,7 @@ namespace ExtraLimb.UI
         {
             panel = new VisualElement();
             panel.AddToClassList("el-panel");
-            var title = new Label("実験者パネル（Step 4-2）　H：隠す");
+            var title = new Label("実験者パネル（Step 4-3）　H：隠す");
             title.AddToClassList("el-panel__title");
             panel.Add(title);
             var scroll = new ScrollView(ScrollViewMode.Vertical);
@@ -211,6 +230,7 @@ namespace ExtraLimb.UI
                 return;
             }
 
+            BuildRunnerSection(scroll);
             BuildLimbSection(scroll);
             BuildStateSection(scroll);
             BuildMappingSection(scroll);
@@ -222,6 +242,68 @@ namespace ExtraLimb.UI
             BuildPracticeSection(scroll);
             BuildDisplaySection(scroll);
             BuildHotkeySection(scroll);
+        }
+
+        void BuildRunnerSection(VisualElement parent)
+        {
+            if (runner == null) return;
+            var section = Section(parent, "条件の進行（Step 4-3）", true);
+            var idRow = Row(section);
+            Text("参加者ID", null, idRow);
+            participantField = Field(idRow);
+            participantField.style.width = 80;
+            Text("順序", null, idRow);
+            rowField = Field(idRow);
+            rowField.style.width = 36;
+            Btn(idRow, "提示順を作る", CreatePlan);
+            Text("順序（ラテン方格の行）は、空なら参加者IDの数字から決める（P01 → 1）", "el-muted", section);
+            planLabel = Text("", "el-muted", section);
+            conditionLabel = Text("", "el-condition", section);
+            phaseLabel = Text("", "el-phase", section);
+            recenterLabel = Text("", null, section);
+            conditionInstruction = Text("", "el-muted", section);
+            var buttons = Row(section);
+            prevButton = Btn(buttons, "前へ（PgUp）", () => runner.Previous());
+            startButton = Btn(buttons, "開始（Enter）", () => runner.StartTrial(), true);
+            abortButton = Btn(buttons, "中止（Esc）", () => runner.Abort());
+            redoButton = Btn(buttons, "やり直す（R）", () => runner.Redo());
+            nextButton = Btn(buttons, "次へ（PgDn）", () => runner.Next(), true);
+            var extra = Row(section);
+            practiceButton = Btn(extra, "練習（今の設定で。提示順に数えない）", () => runner.StartPractice());
+            Text("口頭評価（7段階。数字キー 1〜7 で上から順に入る。入力中の項目は黄色）", "el-muted", section);
+            for (int item = 0; item < ratingLabels.Length; item++)
+            {
+                var ratingRow = Row(section);
+                ratingRow.style.flexWrap = Wrap.NoWrap;
+                ratingLabels[item] = Text(ConditionRating.ItemNames[item], "el-rating-label", ratingRow);
+                for (int value = ConditionRating.Min; value <= ConditionRating.Max; value++)
+                {
+                    int index = item, score = value;
+                    var button = Btn(ratingRow, value.ToString(CultureInfo.InvariantCulture), () => runner.SetRating(index, score));
+                    button.AddToClassList("el-button--rating");
+                    ratingButtons[item, value - 1] = button;
+                }
+            }
+            runnerMessage = Text("", "el-caution", section);
+            sequenceSection = Section(section, "提示順の一覧（押すとその条件を読み込む）", false);
+            sequenceList = new VisualElement();
+            sequenceSection.Add(sequenceList);
+        }
+
+        void CreatePlan()
+        {
+            int? row = null;
+            string text = rowField.value != null ? rowField.value.Trim() : "";
+            if (text.Length > 0)
+            {
+                if (!int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int number) || number < 1)
+                {
+                    SetText(runnerMessage, "順序は 1 以上の数字で入れてください（空なら参加者IDから決める）");
+                    return;
+                }
+                row = number - 1;
+            }
+            runner.CreatePlan(participantField.value, row);
         }
 
         void BuildLimbSection(VisualElement parent)
@@ -280,7 +362,7 @@ namespace ExtraLimb.UI
             for (int axis = 0; axis < 3; axis++)
             {
                 int index = axis;
-                var toggle = new Toggle { text = HandAxisNames[axis] };
+                var toggle = new Toggle { text = HandAxisNames[axis], focusable = false };
                 toggle.AddToClassList("el-toggle");
                 toggle.RegisterValueChangedCallback(evt =>
                 {
@@ -454,7 +536,7 @@ namespace ExtraLimb.UI
 
         Toggle AddToggle(VisualElement parent, string text, Action<bool> onChange)
         {
-            var toggle = new Toggle { text = text };
+            var toggle = new Toggle { text = text, focusable = false };
             toggle.AddToClassList("el-toggle");
             toggle.RegisterValueChangedCallback(evt => onChange(evt.newValue));
             parent.Add(toggle);
@@ -517,7 +599,8 @@ namespace ExtraLimb.UI
 
         // ---- 部品 ----
 
-        // パネルからの操作：出どころを panel にして呼び、すぐに表示を更新する
+        // パネルからの操作：出どころを panel にして呼び、すぐに表示を更新する。
+        // 文字の欄のフォーカスを外す（入力の後にホットキーが効くように）
         void Act(Action action)
         {
             if (session != null)
@@ -528,6 +611,7 @@ namespace ExtraLimb.UI
             {
                 action();
             }
+            root?.panel?.focusController?.focusedElement?.Blur();
             Refresh();
         }
 
@@ -535,6 +619,9 @@ namespace ExtraLimb.UI
         {
             var foldout = new Foldout { text = title, value = open };
             foldout.AddToClassList("el-section");
+            // 見出しにフォーカスが残ると、Enter（課題の開始）で欄が開閉してしまう
+            var header = foldout.Q<Toggle>();
+            if (header != null) header.focusable = false;
             parent.Add(foldout);
             return foldout;
         }
@@ -566,7 +653,8 @@ namespace ExtraLimb.UI
 
         Button Btn(VisualElement parent, string text, Action onClick, bool grow = false)
         {
-            var button = new Button(() => Act(onClick)) { text = text };
+            // ボタンにフォーカスが残ると、Enter（課題の開始）でそのボタンも押されてしまうので、フォーカスを受けない
+            var button = new Button(() => Act(onClick)) { text = text, focusable = false };
             button.AddToClassList("el-button");
             if (grow) button.AddToClassList("el-button--grow");
             parent.Add(button);
@@ -598,6 +686,7 @@ namespace ExtraLimb.UI
             if (!built || session == null) return;
             RefreshBanner();
             if (!visible) return;
+            RefreshRunner();
             var channel = session.Selected;
             RefreshLimbs(channel);
             if (channel == null) return;
@@ -612,8 +701,70 @@ namespace ExtraLimb.UI
             RefreshDisplay();
         }
 
+        // 上の表示と「条件の進行」の欄に出す、今の段階
+        string RunnerPhaseText()
+        {
+            if (runner == null) return "";
+            string prefix = runner.IsPractice ? "練習：" : "";
+            switch (runner.Phase)
+            {
+                case TrialPhase.Ready: return "準備：Re-center → 動かし方を伝える → 開始（Enter）";
+                case TrialPhase.Lead: return $"{prefix}まもなく前半（あと {Mathf.CeilToInt((float)runner.SecondsToSegmentStart)} 秒）";
+                case TrialPhase.Segment1: return $"{prefix}前半（追加肢だけ）　残り {Clock(runner.SegmentRemaining)}";
+                case TrialPhase.Interlude: return $"{prefix}まもなく後半（あと {Mathf.CeilToInt((float)runner.SecondsToSegmentStart)} 秒）";
+                case TrialPhase.Segment2: return $"{prefix}後半（本来の腕も使う）　残り {Clock(runner.SegmentRemaining)}";
+                case TrialPhase.Rating:
+                    int cursor = runner.Rating.Cursor;
+                    return cursor >= 0 ? $"口頭評価：「{ConditionRating.ItemNames[cursor]}」（{cursor + 1}/3）" : "口頭評価";
+                case TrialPhase.Done: return "終了。次へ（PgDn）";
+                case TrialPhase.Break: return $"休憩 {Clock(runner.BreakElapsed)}（HMDを外す）。次へ（PgDn）で次のブロック";
+                case TrialPhase.Finished: return "すべての条件を終えました";
+                default: return runner.HasPlan ? "次へ（PgDn）で1つ目を読み込む" : "提示順がありません";
+            }
+        }
+
+        // 上の大きな表示用の短い形（離れても読めるように）
+        string RunnerBannerText()
+        {
+            string prefix = runner.IsPractice ? "練習：" : "";
+            switch (runner.Phase)
+            {
+                case TrialPhase.Ready: return "準備";
+                case TrialPhase.Lead: return $"{prefix}まもなく前半 {Mathf.CeilToInt((float)runner.SecondsToSegmentStart)}";
+                case TrialPhase.Segment1: return $"{prefix}前半（追加肢だけ）{Clock(runner.SegmentRemaining)}";
+                case TrialPhase.Interlude: return $"{prefix}まもなく後半 {Mathf.CeilToInt((float)runner.SecondsToSegmentStart)}";
+                case TrialPhase.Segment2: return $"{prefix}後半（両手も）{Clock(runner.SegmentRemaining)}";
+                case TrialPhase.Rating:
+                    int cursor = runner.Rating.Cursor;
+                    return cursor >= 0 ? $"評価 {cursor + 1}/3" : "評価";
+                case TrialPhase.Done: return "終了";
+                case TrialPhase.Break: return $"休憩 {Clock(runner.BreakElapsed)}";
+                case TrialPhase.Finished: return "すべて終了";
+                default: return "";
+            }
+        }
+
+        static string Clock(double seconds)
+        {
+            int total = Mathf.Max(0, Mathf.CeilToInt((float)seconds));
+            return $"{total / 60}:{total % 60:00}";
+        }
+
         void RefreshBanner()
         {
+            if (bannerRunner != null)
+            {
+                var spec = runner != null ? runner.Current : null;
+                bool show = runner != null && (runner.HasPlan || runner.IsPractice);
+                Show(bannerRunner, show);
+                if (show)
+                {
+                    string head = runner.IsPractice ? "練習" : spec != null ? $"条件 {spec.order + 1}/{runner.Plan.Count}（{spec.Code}）" : $"{runner.Plan.participantId}";
+                    SetText(bannerRunner, $"{head}　{RunnerBannerText()}");
+                    bannerRunner.EnableInClassList("el-ok", runner.Segment > 0);
+                    bannerRunner.EnableInClassList("el-caution", runner.Phase == TrialPhase.Rating || runner.Phase == TrialPhase.Break);
+                }
+            }
             var channels = session.Channels;
             int line = 0;
             foreach (var channel in channels)
@@ -644,6 +795,93 @@ namespace ExtraLimb.UI
             if (notice != null && notice.CurrentText.Length > 0) sub.Append($"　<color=#ffd678>HMD：{notice.CurrentText}</color>");
             SetText(bannerSub, sub.ToString());
             bannerSub.EnableInClassList("el-warn", recorder != null && !recorder.IsRecording);
+        }
+
+        void RefreshRunner()
+        {
+            if (runner == null || conditionLabel == null) return;
+            var plan = runner.Plan;
+            SetText(planLabel, plan != null
+                ? $"{plan.participantId}　順序 {plan.latinRow + 1}/{plan.latinRowCount}：{plan.BlockOrderText}　全{plan.Count}条件（終了 {runner.DoneCount}）"
+                : "提示順はまだありません");
+            var spec = runner.Current;
+            SetText(conditionLabel, spec != null
+                ? $"条件 {spec.order + 1}/{plan.Count}（ブロック {spec.block + 1}/{plan.BlockCount} の {spec.indexInBlock + 1}/{spec.blockSize}）\n{spec.Label}"
+                : plan != null ? "次へ（PgDn）で1つ目の条件を読み込む" : "参加者IDを入れて「提示順を作る」");
+
+            var phase = runner.Phase;
+            SetText(phaseLabel, "段階：" + RunnerPhaseText());
+            phaseLabel.EnableInClassList("el-ok", runner.Segment > 0);
+            phaseLabel.EnableInClassList("el-caution", phase == TrialPhase.Rating || phase == TrialPhase.Break);
+
+            bool mismatch = spec != null && !runner.IsPractice && (phase == TrialPhase.Ready || runner.IsRunning) && !runner.MatchesCurrent;
+            bool beforeOrDuring = phase == TrialPhase.Ready || runner.IsRunning;
+            string recenter = spec == null || !beforeOrDuring ? "" : runner.RecenterRequestsSinceLoad > 0 ? "読み込み後の Re-center：済み" : "読み込み後の Re-center：まだ（Space）";
+            SetText(recenterLabel, mismatch ? recenter + "　今の設定が条件と違います（読み込み直すときは R）" : recenter);
+            Show(recenterLabel, recenter.Length > 0);
+            recenterLabel.EnableInClassList("el-caution", runner.RecenterRequestsSinceLoad == 0 && !mismatch);
+            recenterLabel.EnableInClassList("el-warn", mismatch);
+            recenterLabel.EnableInClassList("el-ok", runner.RecenterRequestsSinceLoad > 0 && !mismatch);
+
+            var preset = spec != null ? MappingPresets.Find(session.MappingPresetList, spec.mappingPresetId) : null;
+            SetText(conditionInstruction, preset != null && preset.instruction.Length > 0 ? $"動かし方：{preset.instruction}" : "");
+            Show(conditionInstruction, conditionInstruction.text.Length > 0);
+
+            bool running = runner.IsRunning;
+            prevButton.SetEnabled(runner.HasPlan && !running && runner.CurrentIndex > 0);
+            nextButton.SetEnabled(runner.HasPlan && !running && runner.CurrentIndex + 1 < plan.Count);
+            startButton.SetEnabled(phase == TrialPhase.Ready);
+            abortButton.SetEnabled(running || phase == TrialPhase.Rating);
+            redoButton.SetEnabled(spec != null && !running);
+            practiceButton.SetEnabled(!running && phase != TrialPhase.Rating);
+
+            var rating = runner.Rating;
+            int cursor = phase == TrialPhase.Rating ? rating.Cursor : -1;
+            bool editable = phase == TrialPhase.Rating || ((phase == TrialPhase.Done || phase == TrialPhase.Break || phase == TrialPhase.Finished)
+                                                           && runner.StatusOf(runner.CurrentIndex) == ConditionStatus.Done);
+            for (int item = 0; item < ratingLabels.Length; item++)
+            {
+                ratingLabels[item].EnableInClassList("el-current", item == cursor);
+                for (int value = ConditionRating.Min; value <= ConditionRating.Max; value++)
+                {
+                    var button = ratingButtons[item, value - 1];
+                    button.EnableInClassList(SelectedClass, rating[item] == value);
+                    button.SetEnabled(editable);
+                }
+            }
+            SetText(runnerMessage, runner.Message);
+            Show(runnerMessage, runner.Message.Length > 0);
+            RefreshSequenceList();
+        }
+
+        void RefreshSequenceList()
+        {
+            var plan = runner.Plan;
+            if (plan != listedPlan)
+            {
+                listedPlan = plan;
+                sequenceList.Clear();
+                sequenceButtons.Clear();
+                if (plan != null)
+                    for (int i = 0; i < plan.Count; i++)
+                    {
+                        int index = i;
+                        var button = Btn(sequenceList, "", () => runner.Load(index));
+                        button.AddToClassList("el-list-button");
+                        sequenceButtons.Add(button);
+                    }
+            }
+            if (plan == null || !sequenceSection.value) return;
+            for (int i = 0; i < sequenceButtons.Count; i++)
+            {
+                var spec = plan.conditions[i];
+                var status = runner.StatusOf(i);
+                string mark = i == runner.CurrentIndex ? "▶" : status == ConditionStatus.Done ? "✓" : status == ConditionStatus.Aborted ? "×" : "・";
+                int attempts = runner.AttemptsOf(i);
+                SetText(sequenceButtons[i], $"{mark} {i + 1}（{spec.Code}）{spec.Label}" + (attempts > 1 ? $"　{attempts}回" : ""));
+                sequenceButtons[i].EnableInClassList(SelectedClass, i == runner.CurrentIndex);
+                sequenceButtons[i].SetEnabled(!runner.IsRunning);
+            }
         }
 
         void RefreshLimbs(LimbChannel channel)

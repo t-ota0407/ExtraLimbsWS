@@ -101,6 +101,36 @@ namespace ExtraLimb.Experiment
         /// <summary>実験者のための可視化を参加者（HMD）にも見せる・見せない（old・new＝true / false）。</summary>
         public const string OverlayInHmd = "overlay_hmd";
 
+        /// <summary>参加者IDから提示順を作った（key＝参加者ID、new＝ラテン方格の行とブロックの順）。Step 4-3。</summary>
+        public const string Sequence = "sequence";
+
+        /// <summary>条件を読み込んだ（key＝提示順の番号（1 始まり）、new＝条件の中身）。</summary>
+        public const string Condition = "condition";
+
+        /// <summary>課題を始めた（カウントダウンの前。subject＝condition / practice、key＝番号、new＝何回目か）。</summary>
+        public const string TrialStart = "trial_start";
+
+        /// <summary>前半・後半が始まった（key＝1 / 2）。</summary>
+        public const string SegmentStart = "segment_start";
+
+        /// <summary>前半・後半が終わった（key＝1 / 2、new＝到達数（課題がなければ空））。</summary>
+        public const string SegmentEnd = "segment_end";
+
+        /// <summary>課題を中止した（key＝番号、old＝止めたときの段階）。</summary>
+        public const string TrialAbort = "trial_abort";
+
+        /// <summary>口頭評価を入れた（key＝項目 ease / body / fatigue、new＝1〜7）。</summary>
+        public const string Rating = "rating";
+
+        /// <summary>条件を終えた（評価まで入れた。key＝番号、new＝評価の3項目）。</summary>
+        public const string ConditionDone = "condition_done";
+
+        /// <summary>入力部位のブロックの間の休憩に入った（key＝終えたブロック（1 始まり））。</summary>
+        public const string Break = "break";
+
+        /// <summary>すべての条件を終えた。</summary>
+        public const string Finished = "finished";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }

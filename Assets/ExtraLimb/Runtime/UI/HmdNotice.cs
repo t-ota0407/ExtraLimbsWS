@@ -10,9 +10,10 @@ namespace ExtraLimb.UI
     /// 今出している文は実験者パネルの上の表示にも出す。出した通知は記録に残す（hmd_notice）。
     /// 生やす位置・入力の部位・マッピングの型・2本目の表示を、パネルかホットキーで変えたときは、自動で「条件が変わります」を出す。
     /// HMD のカメラがないシーン（DesktopDev）では、確認用にモニタのカメラの前に出す。
+    /// 条件の進行（ConditionRunner、Step 4-3）は IParticipantNotice としてこれを使う。長い文は板に収まるよう字を小さくする。
     /// </summary>
     [DefaultExecutionOrder(10080)]
-    public class HmdNotice : MonoBehaviour
+    public class HmdNotice : MonoBehaviour, IParticipantNotice
     {
         [Tooltip("空ならシーンから探す")]
         [SerializeField] LimbSession session;
@@ -28,6 +29,8 @@ namespace ExtraLimb.UI
         [SerializeField] Vector2 size = new Vector2(0.56f, 0.14f);
         [SerializeField] Vector2Int resolution = new Vector2Int(1024, 256);
         [SerializeField] float fontSize = 110f;
+        [Tooltip("この字数より長い文は、板に収まるよう字を小さくする（全角の字で数える）")]
+        [SerializeField] float charactersAtFullSize = 8.5f;
         [SerializeField] float defaultSeconds = 2.5f;
         [Tooltip("生やす位置・入力の部位・型・2本目を変えたら、自動で通知する")]
         [SerializeField] bool notifyConditionChanges = true;
@@ -116,7 +119,11 @@ namespace ExtraLimb.UI
             if (text != shown)
             {
                 shown = text;
-                if (label != null) label.text = text;
+                if (label != null)
+                {
+                    label.text = text;
+                    label.style.fontSize = FittedFontSize(text, fontSize, charactersAtFullSize);
+                }
             }
             board.gameObject.SetActive(shown.Length > 0 && attachedTo != null);
         }
@@ -142,6 +149,15 @@ namespace ExtraLimb.UI
             board.localRotation = Quaternion.identity;
             // HMD にだけ描く。確認用にモニタに出すときは、モニタにだけ描く
             DisplayLayers.SetLayerRecursively(board.gameObject, onHmd ? DisplayLayers.HmdOnly : DisplayLayers.MonitorOnly);
+        }
+
+        /// <summary>板の幅に収まる字の大きさ（半角の字は 0.55 字として数える）。</summary>
+        public static float FittedFontSize(string text, float fullSize, float charactersAtFullSize)
+        {
+            if (string.IsNullOrEmpty(text) || charactersAtFullSize <= 0f) return fullSize;
+            float width = 0f;
+            foreach (char c in text) width += c < 0x2E80 ? 0.55f : 1f;
+            return width <= charactersAtFullSize ? fullSize : fullSize * charactersAtFullSize / width;
         }
 
         static Camera FindHmdCamera()
