@@ -92,6 +92,9 @@ namespace ExtraLimb.Experiment
         /// <summary>今の設定を JSON に保存した（new＝ファイル名）。</summary>
         public const string ConfigSaved = "config_saved";
 
+        /// <summary>鏡を出した・隠した（old・new＝true / false）。</summary>
+        public const string Mirror = "mirror";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }

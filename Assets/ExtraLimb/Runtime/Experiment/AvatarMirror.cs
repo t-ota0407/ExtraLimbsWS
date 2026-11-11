@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using ExtraLimb.Body;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace ExtraLimb.Experiment
 {
@@ -13,7 +12,7 @@ namespace ExtraLimb.Experiment
     /// <item>映るのはアバター（追加肢を含む）だけ。鏡の向こうに壁と床だけの部屋を作り、鏡の枠の外からは鏡像が見えないようにする。</item>
     /// </list>
     /// この GameObject の位置と向きが鏡を表す：原点は鏡の下の床の高さ（左右の中央）、前（z）は鏡を見る人の側。
-    /// 実行順は、体と追加肢を解き終えた後（LimbSession、仮のボタンより後）。M キーで表示を切り替える。
+    /// 実行順は、体と追加肢を解き終えた後（LimbSession、仮のボタンより後）。表示は実験者パネルとホットキー（既定は M）で切り替える。
     /// </summary>
     [DefaultExecutionOrder(10100)]
     public class AvatarMirror : MonoBehaviour
@@ -37,8 +36,7 @@ namespace ExtraLimb.Experiment
         [Tooltip("部屋の床の材質。空なら壁の色。シーンの床と同じにすると、鏡の中の床がつながって見える")]
         [SerializeField] Material floorMaterial;
 
-        [Header("操作")]
-        [SerializeField] Key toggleKey = Key.M;
+        [Tooltip("鏡を出すか。実験者パネルとホットキー（HotkeyMap、既定は M）で切り替える")]
         [SerializeField] bool visible = true;
 
         const float WallThickness = 0.04f;
@@ -143,17 +141,6 @@ namespace ExtraLimb.Experiment
                 to.localRotation = from.localRotation;
                 // 頭は一人称のために縮めてあるので、鏡像では元の大きさのまま
                 if (!keepScale) to.localScale = from.localScale;
-            }
-        }
-
-        void Update()
-        {
-            var keyboard = Keyboard.current;
-            if (keyboard == null || keyboard.ctrlKey.isPressed || keyboard.altKey.isPressed) return;
-            if (keyboard[toggleKey].wasPressedThisFrame)
-            {
-                Visible = !Visible;
-                Debug.Log($"[ExtraLimb] 鏡：{(Visible ? "表示" : "非表示")}");
             }
         }
 

@@ -9,7 +9,9 @@
     "UnityEditor.TestRunner",
     "ExtraLimb.Limb",
     "ExtraLimb.Body",
-    "ExtraLimb.Experiment"
+    "ExtraLimb.Experiment",
+    "ExtraLimb.UI",
+    "Unity.InputSystem"
   ],
   "includePlatforms": [
     "Editor"

@@ -1,0 +1,204 @@
+/* 実験者パネル（Step 4-2）。ExperimenterPanel がコードで組み立てた要素に、このクラスを付ける。 */
+
+.el-root {
+    flex-grow: 1;
+    font-size: 13px;
+    color: rgb(232, 232, 232);
+}
+
+/* ---- 画面上部の大きな表示 ---- */
+
+.el-banner {
+    position: absolute;
+    left: 10px;
+    top: 6px;
+    padding: 4px 12px;
+    background-color: rgba(10, 12, 16, 0.72);
+    border-radius: 6px;
+}
+
+.el-banner__line {
+    font-size: 21px;
+    -unity-font-style: bold;
+    white-space: nowrap;
+}
+
+.el-banner__sub {
+    font-size: 14px;
+    color: rgb(190, 196, 206);
+    white-space: nowrap;
+}
+
+/* ---- 右のパネル ---- */
+
+.el-panel {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    bottom: 8px;
+    width: 440px;
+    background-color: rgba(24, 26, 31, 0.92);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgb(60, 64, 72);
+    padding: 4px;
+}
+
+.el-panel__title {
+    font-size: 15px;
+    -unity-font-style: bold;
+    margin: 2px 4px 4px 4px;
+}
+
+.el-section {
+    margin: 2px 0 4px 0;
+    padding: 2px 4px 4px 4px;
+    border-top-width: 1px;
+    border-color: rgb(55, 58, 66);
+}
+
+.el-section > .unity-foldout__toggle {
+    margin: 0;
+}
+
+.el-section .unity-foldout__text {
+    -unity-font-style: bold;
+    color: rgb(160, 205, 255);
+}
+
+.el-section .unity-foldout__content {
+    margin-left: 4px;
+}
+
+.el-row {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: 1px 0;
+}
+
+.el-text {
+    white-space: normal;
+    margin: 1px 2px;
+    padding: 0;
+}
+
+.el-muted {
+    color: rgb(150, 156, 166);
+}
+
+.el-warn {
+    color: rgb(255, 122, 102);
+    -unity-font-style: bold;
+}
+
+.el-caution {
+    color: rgb(255, 204, 68);
+}
+
+.el-ok {
+    color: rgb(123, 216, 143);
+}
+
+.el-mono {
+    min-width: 54px;
+    -unity-text-align: middle-right;
+}
+
+.el-button {
+    margin: 1px 2px;
+    padding: 2px 8px;
+    min-height: 24px;
+    background-color: rgb(58, 63, 74);
+    border-color: rgb(88, 94, 106);
+    color: rgb(235, 235, 235);
+    border-radius: 3px;
+}
+
+.el-button:hover {
+    background-color: rgb(74, 80, 94);
+}
+
+.el-button:active {
+    background-color: rgb(40, 44, 52);
+}
+
+.el-button--selected {
+    background-color: rgb(42, 104, 172);
+    border-color: rgb(110, 170, 240);
+}
+
+.el-button--selected:hover {
+    background-color: rgb(52, 118, 190);
+}
+
+.el-button--grow {
+    flex-grow: 1;
+}
+
+.el-button:disabled {
+    opacity: 0.45;
+}
+
+.el-toggle {
+    margin: 1px 6px 1px 2px;
+}
+
+.el-toggle .unity-toggle__text {
+    color: rgb(232, 232, 232);
+    margin-left: 3px;
+}
+
+.el-toggle .unity-base-field__label {
+    min-width: 0;
+    width: auto;
+    display: none;
+}
+
+.el-field {
+    width: 56px;
+    margin: 1px 2px;
+}
+
+.el-field .unity-text-field__input {
+    background-color: rgb(40, 43, 50);
+    color: rgb(240, 240, 240);
+    border-color: rgb(88, 94, 106);
+}
+
+.el-table-row {
+    flex-direction: row;
+    align-items: center;
+}
+
+.el-table-row > Label {
+    margin: 0 2px;
+    padding: 0;
+}
+
+.el-col-name {
+    width: 100px;
+}
+
+.el-col-num {
+    width: 56px;
+    -unity-text-align: middle-right;
+}
+
+.el-col-unit {
+    width: 26px;
+}
+
+.el-used {
+    -unity-font-style: bold;
+    color: rgb(255, 255, 255);
+}
+
+.el-hotkey-row {
+    flex-direction: row;
+}
+
+.el-hotkey-key {
+    width: 110px;
+    color: rgb(255, 214, 120);
+}

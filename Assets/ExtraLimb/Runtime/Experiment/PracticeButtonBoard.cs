@@ -10,6 +10,7 @@ namespace ExtraLimb.Experiment
     /// 押した時間はコンソールに出す。Playgroundのタスク（Step 5）ができたら使わない。
     /// 把持の確認用に、ボタンの下に小さな台と立方体も置く（Step 3-4）。立方体は追加肢（右トリガー）でも本来の手（グリップ）でも掴め、
     /// 放すと落ちる。「立方体を戻す」かRe-centerで台の上に戻る。
+    /// 数と操作は実験者パネル（ExperimenterPanel）に出す（Step 4-2）。
     /// </summary>
     [DefaultExecutionOrder(10020)]
     public class PracticeButtonBoard : MonoBehaviour
@@ -38,7 +39,6 @@ namespace ExtraLimb.Experiment
         [SerializeField] float cubeSize = 0.05f;
         [Tooltip("指先がボタンの中心からこの距離（m）に入ったら押したとする")]
         [SerializeField] float pressRadius = 0.05f;
-        [SerializeField] bool showGui = true;
 
         static readonly Color IdleColor = new Color(0.55f, 0.55f, 0.6f);
         static readonly Color TargetColor = new Color(1f, 0.85f, 0.2f);
@@ -65,6 +65,25 @@ namespace ExtraLimb.Experiment
         int hits;
         float lastSeconds, totalSeconds;
         readonly System.Random random = new System.Random();
+
+        /// <summary>押したボタンの数。</summary>
+        public int Hits => hits;
+
+        /// <summary>直前のボタンを押すまでの秒数。</summary>
+        public float LastSeconds => lastSeconds;
+
+        /// <summary>立方体を掴んだ数。</summary>
+        public int Grabs => grabs;
+
+        /// <summary>今の対象のボタンの名前（右・上など。なければ —）。</summary>
+        public string TargetLabel => targetIndex >= 0 && targetIndex < buttons.Count ? buttons[targetIndex].label : "—";
+
+        /// <summary>押した数・掴んだ数・時間を0に戻す。</summary>
+        public void ResetCounts()
+        {
+            hits = grabs = 0;
+            totalSeconds = lastSeconds = 0f;
+        }
 
         void OnEnable()
         {
@@ -261,28 +280,6 @@ namespace ExtraLimb.Experiment
         {
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
             material.color = color;
-        }
-
-        void OnGUI()
-        {
-            if (!showGui || session == null) return;
-            const float width = 420f;
-            GUILayout.BeginArea(new Rect(Screen.width - width - 10f, LimbSession.PanelHeight + 20f, width, 66f), GUI.skin.box);
-            string target = targetIndex >= 0 && targetIndex < buttons.Count ? buttons[targetIndex].label : "—";
-            GUILayout.Label($"仮のボタン：押した数 {hits}　直前 {lastSeconds:F2} 秒　対象「{target}」　立方体を掴んだ数 {grabs}");
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Re-centerして並べ直す"))
-            {
-                using (session.WithOrigin(ChangeOrigins.Panel)) session.RequestRecenter();
-            }
-            if (GUILayout.Button("立方体を戻す")) ResetCubes();
-            if (GUILayout.Button("数を0に戻す"))
-            {
-                hits = grabs = 0;
-                totalSeconds = lastSeconds = 0f;
-            }
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
         }
     }
 }

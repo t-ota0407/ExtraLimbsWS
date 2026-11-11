@@ -7,7 +7,6 @@ using ExtraLimb.Core;
 using ExtraLimb.Limb;
 using ExtraLimb.Tracking;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 namespace ExtraLimb.Experiment
@@ -16,7 +15,8 @@ namespace ExtraLimb.Experiment
     /// 実験の記録（Step 4-1）。LimbSession のイベント（設定の変更、Re-center、把持など）を events.csv に、
     /// 毎フレームの状態を frames.csv に、設定の全体を config_history.jsonl に書く（ファイルは ExperimentLogger）。
     /// <list type="bullet">
-    /// <item>再生を始めると記録を始める（autoStart）。L で止める・新しく始める、K でマーカー、Ctrl+S で今の設定を JSON に保存。</item>
+    /// <item>再生を始めると記録を始める（autoStart）。止める・新しく始める、マーカー、今の設定を JSON に保存は、
+    /// 実験者パネル（ExperimenterPanel）とホットキー（HotkeyMap。既定は L、K、Ctrl+S）から呼ぶ。</item>
     /// <item>保存先は既定でプロジェクト（ビルドでは exe）と同じ階層の ExperimentData/日時/（リポジトリでは gitignore 対象）。</item>
     /// <item>frames.csv の列は FrameColumns：追加肢（右 r_、左 l_）の入力の6つの値・u・ターゲット・手先・把持、本来の手、
     /// トラッカーの生の姿勢（部位ごと。後のログ再生に使う）。追加肢を解いて掴んだ後（実行順 10050）に書く。</item>
@@ -48,11 +48,6 @@ namespace ExtraLimb.Experiment
             BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow,
             BodySite.Waist, BodySite.Head, BodySite.LeftHand, BodySite.RightHand,
         };
-
-        [Header("表示")]
-        [SerializeField] bool showGui = true;
-        [Tooltip("記録の行の左下の位置（画面の左下から）")]
-        [SerializeField] Vector2 panelOffset = new Vector2(450f, 2f);
 
         /// <summary>追加肢の列の頭（右、左）。</summary>
         public static readonly string[] LimbPrefixes = { "r_", "l_" };
@@ -103,8 +98,14 @@ namespace ExtraLimb.Experiment
 
         public int MarkerCount => markerCount;
 
-        /// <summary>パネルに出している最後のメッセージ。</summary>
+        /// <summary>最後のメッセージ（記録の開始・停止、マーカー、保存の結果）。</summary>
         public string Message => message;
+
+        /// <summary>最後のメッセージの短い形（パネルの1行用）。</summary>
+        public string ShortMessage => barMessage;
+
+        /// <summary>最後のメッセージを出した時刻（Time.unscaledTime）。</summary>
+        public float MessageTime => messageTime;
 
         /// <summary>保存先のフォルダ（絶対パス）。</summary>
         public string RootDirectory => string.IsNullOrEmpty(rootDirectory) ? ExperimentLogger.DefaultRoot : Path.GetFullPath(rootDirectory);
@@ -332,23 +333,6 @@ namespace ExtraLimb.Experiment
 
         // ---- 毎フレーム ----
 
-        void Update()
-        {
-            var keyboard = Keyboard.current;
-            if (keyboard == null || keyboard.altKey.isPressed) return;
-            if (keyboard.ctrlKey.isPressed)
-            {
-                if (keyboard.sKey.wasPressedThisFrame) SaveCurrentConfig(ChangeOrigins.Key("Ctrl+S"));
-                return;
-            }
-            if (keyboard.lKey.wasPressedThisFrame)
-            {
-                if (IsRecording) StopRecording(ChangeOrigins.Key("L"));
-                else StartRecording(ChangeOrigins.Key("L"));
-            }
-            if (keyboard.kKey.wasPressedThisFrame) InsertMarker(ChangeOrigins.Key("K"));
-        }
-
         void LateUpdate()
         {
             if (!IsRecording) return;
@@ -430,38 +414,5 @@ namespace ExtraLimb.Experiment
             }
             row.Add(false).AddEmpty(TrackerColumns.Length - 1);
         }
-
-        // ---- 表示 ----
-
-        void OnGUI()
-        {
-            if (!showGui) return;
-            // 画面の下の1行。ボタンを左に置き、状態は右に（狭いと右が切れる）。左下の仮想トラッカーの操作と重ならない位置
-            const float height = 30f;
-            float width = Mathf.Min(620f, Screen.width - panelOffset.x - 10f);
-            GUILayout.BeginArea(new Rect(panelOffset.x, Screen.height - height - panelOffset.y, width, height), GUI.skin.box);
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button(IsRecording ? "停止（L）" : "記録（L）", GUILayout.ExpandWidth(false)))
-            {
-                if (IsRecording) StopRecording(ChangeOrigins.Panel);
-                else StartRecording(ChangeOrigins.Panel);
-            }
-            if (GUILayout.Button("マーカー（K）", GUILayout.ExpandWidth(false))) InsertMarker(ChangeOrigins.Panel);
-            if (GUILayout.Button("設定を保存（Ctrl+S）", GUILayout.ExpandWidth(false))) SaveCurrentConfig(ChangeOrigins.Panel);
-            string status;
-            if (barMessage.Length > 0 && Time.unscaledTime - messageTime < 5f) status = barMessage;
-            else if (IsRecording)
-            {
-                var elapsed = TimeSpan.FromSeconds(ElapsedSeconds);
-                status = $"<color=#ff6666>●</color> 記録中 {(int)elapsed.TotalMinutes:00}:{elapsed.Seconds:00} 版{(session != null ? session.Revision : 0)} マーカー{markerCount}";
-            }
-            else status = "記録していません";
-            GUILayout.Label(status, Rich);
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
-        }
-
-        static GUIStyle rich;
-        static GUIStyle Rich => rich ??= new GUIStyle(GUI.skin.label) { richText = true };
     }
 }

@@ -25,6 +25,8 @@ namespace ExtraLimb.Tracking
 
         [SerializeField] float cubeSize = 0.05f;
         [SerializeField] bool showGui = true;
+        [Tooltip("一覧の左上の位置（画面の左上から、px）。上には実験者パネルの大きな表示がある")]
+        [SerializeField] Vector2 guiPosition = new Vector2(10f, 120f);
         [Tooltip("一覧をたたんで、状態だけを小さく出す（ほかのパネルと重ならないように）")]
         [SerializeField] bool collapsed;
 
@@ -222,7 +224,7 @@ namespace ExtraLimb.Tracking
             int rows = registry != null ? registry.Sources.Count : 0;
             float width = collapsed ? 400f : 520f;
             float height = collapsed ? 30f + 22f * (providers.Count + 1) : 200f + 22f * providers.Count + 25f * rows;
-            GUILayout.BeginArea(new Rect(10f, 10f, width, height), GUI.skin.box);
+            GUILayout.BeginArea(new Rect(guiPosition.x, guiPosition.y, width, height), GUI.skin.box);
             GUILayout.BeginHorizontal();
             GUILayout.Label($"<b>入力ソースの一覧</b>　画面更新 {fps:F0} fps", Rich);
             if (GUILayout.Button(collapsed ? "一覧を開く" : "たたむ", GUILayout.Width(90f))) collapsed = !collapsed;

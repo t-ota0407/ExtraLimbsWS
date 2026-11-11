@@ -4,7 +4,6 @@ using ExtraLimb.Core;
 using ExtraLimb.Limb;
 using ExtraLimb.Tracking;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 namespace ExtraLimb.Experiment
 {
@@ -86,8 +85,11 @@ namespace ExtraLimb.Experiment
             return 0f;
         }
 
-        /// <summary>G キーで掴んでいるか。</summary>
-        public bool KeyPressed { get; private set; }
+        /// <summary>
+        /// 実験者のキー（予備。既定は G）を押しているか。ホットキー（HotkeyMap）が毎フレーム入れる（Step 4-2）。
+        /// 押している間、パネルで設定している追加肢が掴む。
+        /// </summary>
+        public bool KeyPressed { get; set; }
 
         /// <summary>そのコントローラーのグリップの押し込み量（0〜1、本来の手）。</summary>
         public float GripValue(ControllerHand hand) => hand == ControllerHand.Left ? leftGripValue : rightGripValue;
@@ -189,8 +191,6 @@ namespace ExtraLimb.Experiment
         {
             var input = Controllers;
             input.Tick(Time.unscaledDeltaTime);
-            var keyboard = Keyboard.current;
-            KeyPressed = keyboard != null && keyboard.gKey.isPressed && !keyboard.ctrlKey.isPressed && !keyboard.altKey.isPressed;
             var selected = session != null ? session.Selected : null;
 
             foreach (var hand in limbHands)

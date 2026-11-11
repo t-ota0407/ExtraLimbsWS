@@ -498,7 +498,6 @@ MonoBehaviour:
   - {x: 0.1, y: -0.12, z: 0.1}
   cubeSize: 0.05
   pressRadius: 0.05
-  showGui: 1
 --- !u!114 &918290514
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -583,15 +582,11 @@ MonoBehaviour:
   inputSites: 0b00000009000000050000000d000000
   mappingPresets: []
   mappingPresetResourcePath: ExtraLimbMappings
-  showChannelPanel: 1
-  channelPanelCollapsed: 0
-  channelPanelPosition: {x: 10, y: 150}
   createGraspRig: 1
   movingThresholdCmPerSecond: 15
   recentMotionSeconds: 4
   minForwardGestureCm: 5
   showTargetMarker: 1
-  showGui: 1
 --- !u!4 &918290515
 Transform:
   m_ObjectHideFlags: 0
@@ -627,8 +622,6 @@ MonoBehaviour:
   frameStride: 1
   flushIntervalSeconds: 1
   trackerSites: 0b00000009000000050000000d00000001000000030000000600000007000000
-  showGui: 1
-  panelOffset: {x: 450, y: 2}
 --- !u!114 &918290517
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -702,6 +695,7 @@ MonoBehaviour:
   vizScale: 0.35
   cubeSize: 0.05
   showGui: 1
+  guiPosition: {x: 10, y: 120}
   collapsed: 1
   defaultInputSite: 11
   movingThresholdCmPerSecond: 15
@@ -1018,6 +1012,100 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!1 &1275675635
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1275675639}
+  - component: {fileID: 1275675638}
+  - component: {fileID: 1275675637}
+  - component: {fileID: 1275675636}
+  m_Layer: 0
+  m_Name: ExperimenterUI
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1275675636
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1275675635}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8cc2f76d0b5bc65469b5d2e65d3e8f6d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.UI::ExtraLimb.UI.HotkeyMap
+  actions: {fileID: 0}
+  session: {fileID: 0}
+  recorder: {fileID: 0}
+  mirror: {fileID: 0}
+  panel: {fileID: 0}
+--- !u!114 &1275675637
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1275675635}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9b15de7590892a646b05583b785881c0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.UI::ExtraLimb.UI.ExperimenterPanel
+  session: {fileID: 0}
+  recorder: {fileID: 0}
+  practice: {fileID: 0}
+  mirror: {fileID: 0}
+  hotkeys: {fileID: 0}
+  styleSheet: {fileID: 0}
+  visible: 1
+  refreshInterval: 0.066
+--- !u!114 &1275675638
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1275675635}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 19102, guid: 0000000000000000e000000000000000, type: 0}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.dll::UnityEngine.UIElements.UIDocument
+  m_PanelSettings: {fileID: 11400000, guid: 5831342f1be3fb04c98a01e499b337b7, type: 2}
+  m_ParentUI: {fileID: 0}
+  sourceAsset: {fileID: 0}
+  m_SortingOrder: 0
+  m_Position: 0
+  m_WorldSpaceSizeMode: 1
+  m_WorldSpaceWidth: 1920
+  m_WorldSpaceHeight: 1080
+  m_PivotReferenceSize: 0
+  m_Pivot: 0
+  m_WorldSpaceCollider: {fileID: 0}
+--- !u!4 &1275675639
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1275675635}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1313455904
 GameObject:
   m_ObjectHideFlags: 0
@@ -1307,7 +1395,6 @@ MonoBehaviour:
   wallColor: {r: 0.78, g: 0.78, b: 0.8, a: 1}
   frameColor: {r: 0.15, g: 0.15, b: 0.17, a: 1}
   floorMaterial: {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
-  toggleKey: 27
   visible: 1
 --- !u!4 &2028882907
 Transform:
@@ -1445,3 +1532,4 @@ SceneRoots:
   - {fileID: 918290515}
   - {fileID: 1313455908}
   - {fileID: 2028882907}
+  - {fileID: 1275675639}
