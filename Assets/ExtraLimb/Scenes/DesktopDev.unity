@@ -349,6 +349,7 @@ MonoBehaviour:
   overlay: {fileID: 0}
   notice: {fileID: 0}
   runner: {fileID: 0}
+  replayer: {fileID: 0}
   styleSheet: {fileID: 0}
   visible: 1
   refreshInterval: 0.066
@@ -790,6 +791,7 @@ GameObject:
   - component: {fileID: 1782451046}
   - component: {fileID: 1782451045}
   - component: {fileID: 1782451047}
+  - component: {fileID: 1782451048}
   m_Layer: 0
   m_Name: ExtraLimb
   m_TagString: Untagged
@@ -998,6 +1000,25 @@ MonoBehaviour:
   abortText: "\u4E2D\u65AD\u3057\u307E\u3059"
   breakText: "\u4F11\u61A9\u3067\u3059"
   finishedText: "\u3059\u3079\u3066\u7D42\u308F\u308A\u307E\u3057\u305F"
+--- !u!114 &1782451048
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1782451041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 35b1379a1471e16419e8158e6fddcd3b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.LogReplayer
+  session: {fileID: 0}
+  registryHost: {fileID: 0}
+  recorder: {fileID: 0}
+  rootDirectory: 
+  driveAvatar: 1
+  speed: 1
+  settleSeconds: 0.5
 --- !u!1 &2135716649
 GameObject:
   m_ObjectHideFlags: 0

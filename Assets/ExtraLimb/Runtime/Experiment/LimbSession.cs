@@ -590,6 +590,8 @@ namespace ExtraLimb.Experiment
             for (int i = 0; i < channels.Count; i++)
             {
                 var channel = channels[i];
+                var pipeline = channel.Pipeline;
+                var neutral = pipeline.Calibrator.NeutralLocalPose;
                 snapshot.limbs[i] = new LimbSnapshot
                 {
                     limb = channel.Subject,
@@ -597,6 +599,12 @@ namespace ExtraLimb.Experiment
                     inputId = channel.InputId ?? "",
                     referenceId = channel.ReferenceId ?? "",
                     config = channel.Config.Clone(),
+                    stateSaved = true,
+                    recentered = pipeline.Calibrator.IsCalibrated,
+                    neutralPosition = neutral.position,
+                    neutralRotation = neutral.rotation,
+                    hasForward = pipeline.BodyFrame.HasForward,
+                    forward = pipeline.BodyFrame.HasForward ? pipeline.BodyFrame.Forward : Vector3.zero,
                 };
             }
             return snapshot;

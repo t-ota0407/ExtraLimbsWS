@@ -5,13 +5,14 @@ namespace ExtraLimb.Tracking
     /// <summary>
     /// 入力と基準のソースの選び方。追加肢（LimbSession）と確認用のモニタで同じ規則を使う。
     /// <list type="bullet">
-    /// <item>入力：IDの指定があればそれ。なければ部位で探す（SteamVR のトラッカー → 仮想トラッカーの順）。</item>
+    /// <item>入力：IDの指定があればそれ。なければ部位で探す（記録の再生 → SteamVR のトラッカー → 仮想トラッカー → Quest の順）。</item>
     /// <item>基準：IDの指定があり、入力と同じ空間で入力とは別のソースならそれ。なければ入力と同じ空間の部屋。</item>
     /// </list>
     /// </summary>
     public static class SourceSelector
     {
-        static readonly PoseSpace[] SpacePreference = { PoseSpace.SteamVR, PoseSpace.Virtual, PoseSpace.Quest };
+        // 記録の再生（Step 4-4）は、再生している間だけソースがあるので、いちばん先に探す
+        static readonly PoseSpace[] SpacePreference = { PoseSpace.Replay, PoseSpace.SteamVR, PoseSpace.Virtual, PoseSpace.Quest };
 
         /// <summary>入力のソースのID。見つからなければ null。</summary>
         public static string SelectInput(TrackerRegistry registry, string explicitId, BodySite site)

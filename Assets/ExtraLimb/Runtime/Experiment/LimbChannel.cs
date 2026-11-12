@@ -20,6 +20,11 @@ namespace ExtraLimb.Experiment
         bool mountCompletedPending, geometryChanged, loadForwardPending;
         Transform targetMarker;
 
+        // ログの再生（Step 4-4）：次の計算で使う、記録の基準姿勢と前の向き
+        bool restorePending, restoreRecentered, restoreHasForward;
+        Pose restoreNeutral;
+        Vector3 restoreForward;
+
         public LimbSide Side { get; }
 
         /// <summary>パネルに出す名前（「右」「左」）。</summary>
@@ -131,6 +136,19 @@ namespace ExtraLimb.Experiment
         }
 
         public void RequestRecenter() => recenterRequested = true;
+
+        /// <summary>
+        /// ログの再生（Step 4-4）：次の計算で、記録した基準姿勢（基準から見た入力の姿勢）と前の向きをそのまま使う。
+        /// 今の姿勢で Re-center するのではなく、記録した時点と同じ変位の 0 にする。recentered が false なら今の姿勢で Re-center する。
+        /// </summary>
+        public void RestoreState(bool recentered, Pose neutralLocal, bool hasForward, Vector3 forward)
+        {
+            restorePending = true;
+            restoreRecentered = recentered;
+            restoreNeutral = neutralLocal;
+            restoreHasForward = hasForward;
+            restoreForward = forward;
+        }
         public void RequestRecordForward() => forwardRequested = true;
 
         /// <summary>入力の6つの値の、Re-center からの最小・最大（表示用の単位：並進 cm、回転 度）。</summary>
@@ -155,7 +173,12 @@ namespace ExtraLimb.Experiment
             IsInputValid = TryGetPoses(registry, out var referencePose, out var inputPose);
             if (IsInputValid)
             {
-                if (recenterRequested || !Pipeline.IsRecentered)
+                if (restorePending)
+                {
+                    ApplyRestore(referencePose, inputPose);
+                    recentered = true;
+                }
+                else if (recenterRequested || !Pipeline.IsRecentered)
                 {
                     Pipeline.Recenter(referencePose, inputPose);
                     recenterRequested = false;
@@ -191,6 +214,27 @@ namespace ExtraLimb.Experiment
             if (recentered) Recentered?.Invoke();
             if (notifyMount) MountChanged?.Invoke();
             LimbSolved?.Invoke();
+        }
+
+        void ApplyRestore(Pose referencePose, Pose inputPose)
+        {
+            restorePending = false;
+            recenterRequested = false;
+            loadForwardPending = false;
+            if (restoreRecentered)
+            {
+                // 基準から見た入力の姿勢が記録のとおりになるように、仮の入力の姿勢を作って Re-center する
+                var neutralInput = new Pose(referencePose.position + referencePose.rotation * restoreNeutral.position,
+                    referencePose.rotation * restoreNeutral.rotation);
+                Pipeline.Recenter(referencePose, neutralInput);
+            }
+            else
+            {
+                Pipeline.Recenter(referencePose, inputPose);
+            }
+            if (!restoreHasForward || !Pipeline.BodyFrame.TrySetForward(restoreForward, 0.01f)) Pipeline.BodyFrame.ClearForward();
+            owner.Raise(SessionEventTypes.Recenter, Subject, "input", "", InputId,
+                $"{Label}の追加肢：記録の基準姿勢{(restoreRecentered ? "" : "（なし。今の姿勢）")}と前の向き{(restoreHasForward ? "" : "（なし）")}に合わせました", ChangeOrigins.Replay);
         }
 
         void RecordForward(Pose referencePose, Pose inputPose)

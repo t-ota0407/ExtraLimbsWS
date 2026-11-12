@@ -131,6 +131,9 @@ namespace ExtraLimb.Experiment
         /// <summary>すべての条件を終えた。</summary>
         public const string Finished = "finished";
 
+        /// <summary>ログの再生を始めた・やめた（key＝start / stop、new＝再生する記録のフォルダ名）。Step 4-4。</summary>
+        public const string Replay = "replay";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }
@@ -152,6 +155,9 @@ namespace ExtraLimb.Experiment
 
         /// <summary>参加者のコントローラーのグリップ。</summary>
         public const string Grip = "grip";
+
+        /// <summary>記録の再生（Step 4-4）。</summary>
+        public const string Replay = "replay";
 
         /// <summary>実験者のキー（例：key:F1、key:Ctrl+2）。</summary>
         public static string Key(string name) => "key:" + name;

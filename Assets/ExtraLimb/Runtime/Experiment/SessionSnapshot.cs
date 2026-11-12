@@ -1,5 +1,6 @@
 using System;
 using ExtraLimb.Core;
+using UnityEngine;
 
 namespace ExtraLimb.Experiment
 {
@@ -47,5 +48,19 @@ namespace ExtraLimb.Experiment
         public string referenceId = "";
 
         public LimbRuntimeConfig config = new LimbRuntimeConfig();
+
+        /// <summary>下の基準姿勢と前の向きを書いてあるか（Step 4-4 から。古い記録では false）。</summary>
+        public bool stateSaved;
+
+        /// <summary>Re-center 済みか。</summary>
+        public bool recentered;
+
+        /// <summary>Re-center 時の、基準から見た入力の姿勢（NeutralPoseCalibrator.NeutralLocalPose）。ログの再生で同じ基準姿勢にする。</summary>
+        public Vector3 neutralPosition;
+        public Quaternion neutralRotation = Quaternion.identity;
+
+        /// <summary>体の前の向きを記録してあるか、と、その向き（基準の座標）。</summary>
+        public bool hasForward;
+        public Vector3 forward;
     }
 }

@@ -341,7 +341,12 @@ namespace ExtraLimb.Experiment
 
         // ---- イベント ----
 
-        void OnSessionEvent(SessionEvent e) => Write(e);
+        void OnSessionEvent(SessionEvent e)
+        {
+            Write(e);
+            // Re-center と前の記録のときも設定の全体（基準姿勢と前の向きを含む）を書く。ログの再生で同じ状態にするため（Step 4-4）
+            if (e.type == SessionEventTypes.Recenter || e.type == SessionEventTypes.Forward) WriteSnapshot(e.type);
+        }
 
         void OnRevised(string reason) => WriteSnapshot(reason);
 

@@ -103,7 +103,7 @@ namespace ExtraLimb.UI
 
         void OnSessionEvent(SessionEvent e)
         {
-            if (!notifyConditionChanges || e.origin == ChangeOrigins.System) return;
+            if (!notifyConditionChanges || e.origin == ChangeOrigins.System || e.origin == ChangeOrigins.Replay) return;
             bool condition = e.type == SessionEventTypes.TwoLimbs
                              || (e.type == SessionEventTypes.Config && (e.key == "attachPointId" || e.key == "inputSite" || e.key == "mappingPresetId"));
             if (condition) Show(conditionChangedText);

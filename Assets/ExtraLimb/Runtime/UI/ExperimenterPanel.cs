@@ -49,6 +49,8 @@ namespace ExtraLimb.UI
         [SerializeField] HmdNotice notice;
         [Tooltip("空ならシーンから探す（なければ「条件の進行」の欄を出さない）")]
         [SerializeField] ConditionRunner runner;
+        [Tooltip("空ならシーンから探す（なければ「ログの再生」の欄を出さない）")]
+        [SerializeField] LogReplayer replayer;
         [Tooltip("見た目。空なら Resources の StyleResourcePath から読む")]
         [SerializeField] StyleSheet styleSheet;
         [Tooltip("パネルを出すか（ホットキー H で切り替える）。上の大きな表示はいつも出す")]
@@ -76,6 +78,12 @@ namespace ExtraLimb.UI
         readonly Button[,] ratingButtons = new Button[3, ConditionRating.Max];
         Foldout sequenceSection;
         VisualElement sequenceList;
+
+        // ログの再生
+        Foldout replaySection;
+        Label replayFolderLabel, replayStatusLabel, replayErrorLabel;
+        Button replayPlayButton;
+        readonly List<(Button button, float speed)> replaySpeedButtons = new List<(Button, float)>();
         ConditionPlan listedPlan;
         readonly List<Button> sequenceButtons = new List<Button>();
 
@@ -145,6 +153,7 @@ namespace ExtraLimb.UI
             if (overlay == null) overlay = FindFirstObjectByType<DebugOverlay>();
             if (notice == null) notice = FindFirstObjectByType<HmdNotice>();
             if (runner == null) runner = FindFirstObjectByType<ConditionRunner>();
+            if (replayer == null) replayer = FindFirstObjectByType<LogReplayer>();
             if (styleSheet == null) styleSheet = Resources.Load<StyleSheet>(StyleResourcePath);
             // UIDocument を入れ直すと要素が作り直されるので、次の Update で組み立て直す
             built = false;
@@ -239,6 +248,7 @@ namespace ExtraLimb.UI
             BuildGraspSection(scroll);
             BuildBodySection(scroll);
             BuildRecordSection(scroll);
+            BuildReplaySection(scroll);
             BuildPracticeSection(scroll);
             BuildDisplaySection(scroll);
             BuildHotkeySection(scroll);
@@ -474,6 +484,34 @@ namespace ExtraLimb.UI
             if (recorder == null) recordStatus.text = "ExperimentRecorder がシーンにありません";
         }
 
+        void BuildReplaySection(VisualElement parent)
+        {
+            if (replayer == null) return;
+            replaySection = Section(parent, "ログの再生（Step 4-4）", false);
+            replayFolderLabel = Text("", null, replaySection);
+            var folderRow = Row(replaySection);
+            Btn(folderRow, "新しい記録", () => replayer.SelectFolder(-1));
+            Btn(folderRow, "古い記録", () => replayer.SelectFolder(1));
+            Btn(folderRow, "一覧を更新", () => replayer.RefreshFolders());
+            Btn(folderRow, "読み込む", () => replayer.BeginLoad(), true);
+            replayStatusLabel = Text("", null, replaySection);
+            var playRow = Row(replaySection);
+            replayPlayButton = Btn(playRow, "再生", () => replayer.TogglePlay(), true);
+            Btn(playRow, "−10秒", () => replayer.Skip(-10));
+            Btn(playRow, "＋10秒", () => replayer.Skip(10));
+            Btn(playRow, "止める（実機に戻す）", () => replayer.Stop());
+            var speedRow = Row(replaySection);
+            Text("速さ", null, speedRow);
+            replaySpeedButtons.Clear();
+            foreach (float value in new[] { 0.5f, 1f, 2f, 4f })
+            {
+                float speed = value;
+                replaySpeedButtons.Add((Btn(speedRow, $"×{value.ToString("0.#", CultureInfo.InvariantCulture)}", () => replayer.Speed = speed), speed));
+            }
+            replayErrorLabel = Text("", "el-muted", replaySection);
+            Text("再生中は、記録したトラッカーの動き・設定・Re-center が追加肢に入る（実機と仮想のトラッカーより優先）。止めると実機に戻り、設定は再生の最後のまま", "el-muted", replaySection);
+        }
+
         void BuildPracticeSection(VisualElement parent)
         {
             if (practice == null) return;
@@ -697,6 +735,7 @@ namespace ExtraLimb.UI
             RefreshGrasp();
             RefreshBody();
             RefreshRecord();
+            RefreshReplay();
             RefreshPractice();
             RefreshDisplay();
         }
@@ -793,6 +832,7 @@ namespace ExtraLimb.UI
             }
             if (session.Selected != null && session.HasLeftLimb) sub.Append($"　設定中：{session.Selected.Label}の追加肢");
             if (notice != null && notice.CurrentText.Length > 0) sub.Append($"　<color=#ffd678>HMD：{notice.CurrentText}</color>");
+            if (replayer != null && replayer.IsLoaded) sub.Append($"　<color=#8fd3ff>ログの再生 {(replayer.IsPlaying ? "▶" : "Ⅱ")} {Clock(replayer.Position)}</color>");
             SetText(bannerSub, sub.ToString());
             bannerSub.EnableInClassList("el-warn", recorder != null && !recorder.IsRecording);
         }
@@ -1056,6 +1096,35 @@ namespace ExtraLimb.UI
             recordStatus.EnableInClassList("el-warn", !recorder.IsRecording);
             SetText(recordButton, recorder.IsRecording ? "記録を止める（L）" : "記録を始める（L）");
             SetText(recordMessage, recorder.Message);
+        }
+
+        void RefreshReplay()
+        {
+            if (replayer == null || replaySection == null || !replaySection.value) return;
+            var folders = replayer.Folders;
+            string selected = replayer.SelectedFolder;
+            SetText(replayFolderLabel, selected != null
+                ? $"記録：{System.IO.Path.GetFileName(selected)}（新しい方から {replayer.SelectedFolderIndex + 1}/{folders.Count}）"
+                : $"記録がありません（{replayer.Root}）");
+            var log = replayer.Log;
+            string status;
+            if (replayer.IsLoading) status = $"読み込み中 {replayer.LoadProgress * 100f:F0}%：{System.IO.Path.GetFileName(replayer.LoadingDirectory)}";
+            else if (replayer.Error.Length > 0) status = replayer.Error;
+            else if (log == null) status = "再生していません";
+            else
+            {
+                status = $"{(replayer.IsPlaying ? "再生中" : "一時停止")} {Clock(replayer.Position)} / {Clock(replayer.Duration)}（×{replayer.Speed.ToString("0.#", CultureInfo.InvariantCulture)}）　{System.IO.Path.GetFileName(log.Directory)}";
+                if (!log.HasSavedState) status += "\n古い記録（基準姿勢と前の向きなし）：Re-center の時刻にその場で合わせる近似の再生";
+            }
+            SetText(replayStatusLabel, status);
+            replayStatusLabel.EnableInClassList("el-warn", replayer.Error.Length > 0);
+            replayStatusLabel.EnableInClassList("el-ok", replayer.IsPlaying);
+            SetText(replayPlayButton, replayer.IsPlaying ? "一時停止" : "再生");
+            replayPlayButton.SetEnabled(log != null);
+            foreach (var (button, speed) in replaySpeedButtons) button.EnableInClassList(SelectedClass, Mathf.Approximately(replayer.Speed, speed));
+            SetText(replayErrorLabel, replayer.ErrorSamples > 0
+                ? $"記録との差（右の追加肢の u）：平均 {replayer.MeanErrorMm:F1} mm、最大 {replayer.MaxErrorMm:F1} mm（{replayer.ErrorSamples} フレーム）"
+                : log != null ? "記録との差：再生すると出る" : "");
         }
 
         void RefreshPractice()

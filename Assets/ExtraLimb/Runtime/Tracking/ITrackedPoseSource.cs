@@ -16,6 +16,9 @@ namespace ExtraLimb.Tracking
 
         /// <summary>Questの空間（HMD・コントローラー・手）。</summary>
         Quest = 2,
+
+        /// <summary>記録を再生しているソース（Step 4-4）。再生中は、同じ部位のほかのソースより優先する。</summary>
+        Replay = 3,
     }
 
     /// <summary>1つの部位の姿勢を返すソース。上の層はこの形だけを見る。</summary>
