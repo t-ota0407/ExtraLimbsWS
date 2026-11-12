@@ -500,6 +500,7 @@ GameObject:
   - component: {fileID: 918290517}
   - component: {fileID: 918290516}
   - component: {fileID: 918290518}
+  - component: {fileID: 918290519}
   m_Layer: 0
   m_Name: ExtraLimb
   m_TagString: Untagged
@@ -708,6 +709,29 @@ MonoBehaviour:
   abortText: "\u4E2D\u65AD\u3057\u307E\u3059"
   breakText: "\u4F11\u61A9\u3067\u3059"
   finishedText: "\u3059\u3079\u3066\u7D42\u308F\u308A\u307E\u3057\u305F"
+--- !u!114 &918290519
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 918290512}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9267e0beb58645841a68da07de477114, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.ReachTask
+  layout: {fileID: 11400000, guid: 20876243aba71de48bda4609393337e8, type: 2}
+  session: {fileID: 0}
+  runner: {fileID: 0}
+  recorder: {fileID: 0}
+  practiceBoard: {fileID: 0}
+  showIdleTargets: 1
+  hidePracticeBoardWhenPlaced: 1
+  hitFlashSeconds: 0.25
+  idleColor: {r: 0.42, g: 0.45, b: 0.5, a: 1}
+  litColor: {r: 1, g: 0.82, b: 0.12, a: 1}
+  hitColor: {r: 0.3, g: 1, b: 0.45, a: 1}
 --- !u!1 &1144175807
 GameObject:
   m_ObjectHideFlags: 0
@@ -1136,6 +1160,8 @@ MonoBehaviour:
   overlay: {fileID: 0}
   notice: {fileID: 0}
   runner: {fileID: 0}
+  replayer: {fileID: 0}
+  reach: {fileID: 0}
   styleSheet: {fileID: 0}
   visible: 1
   refreshInterval: 0.066

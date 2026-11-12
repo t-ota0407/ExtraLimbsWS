@@ -183,6 +183,9 @@ namespace ExtraLimb.Experiment
 
         public int AttemptsOf(int index) => index >= 0 && index < attempts.Length ? attempts[index] : 0;
 
+        /// <summary>練習をした回数（提示順を作り直すと0に戻る）。</summary>
+        public int PracticeCount => practiceCount;
+
         /// <summary>終えた条件の数。</summary>
         public int DoneCount
         {

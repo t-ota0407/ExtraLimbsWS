@@ -350,6 +350,7 @@ MonoBehaviour:
   notice: {fileID: 0}
   runner: {fileID: 0}
   replayer: {fileID: 0}
+  reach: {fileID: 0}
   styleSheet: {fileID: 0}
   visible: 1
   refreshInterval: 0.066
@@ -792,6 +793,7 @@ GameObject:
   - component: {fileID: 1782451045}
   - component: {fileID: 1782451047}
   - component: {fileID: 1782451048}
+  - component: {fileID: 1782451049}
   m_Layer: 0
   m_Name: ExtraLimb
   m_TagString: Untagged
@@ -1019,6 +1021,29 @@ MonoBehaviour:
   driveAvatar: 1
   speed: 1
   settleSeconds: 0.5
+--- !u!114 &1782451049
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1782451041}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9267e0beb58645841a68da07de477114, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.ReachTask
+  layout: {fileID: 11400000, guid: 20876243aba71de48bda4609393337e8, type: 2}
+  session: {fileID: 0}
+  runner: {fileID: 0}
+  recorder: {fileID: 0}
+  practiceBoard: {fileID: 0}
+  showIdleTargets: 1
+  hidePracticeBoardWhenPlaced: 1
+  hitFlashSeconds: 0.25
+  idleColor: {r: 0.42, g: 0.45, b: 0.5, a: 1}
+  litColor: {r: 1, g: 0.82, b: 0.12, a: 1}
+  hitColor: {r: 0.3, g: 1, b: 0.45, a: 1}
 --- !u!1 &2135716649
 GameObject:
   m_ObjectHideFlags: 0

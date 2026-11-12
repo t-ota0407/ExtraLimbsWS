@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0d164e0004f3405418cd7040e3fa5745, type: 3}
+  m_Name: ReachLayout
+  m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.TaskLayout
+  forwardRatio: 0.17
+  upRatio: 0.09
+  rightRatio: 0.3
+  radiusRatio: 0.28
+  targetCount: 8
+  targetRadius: 0.03
+  extraLimbProbeRadius: 0.015
+  handProbeRadius: 0.04

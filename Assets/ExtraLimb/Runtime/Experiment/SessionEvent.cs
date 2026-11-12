@@ -134,6 +134,12 @@ namespace ExtraLimb.Experiment
         /// <summary>ログの再生を始めた・やめた（key＝start / stop、new＝再生する記録のフォルダ名）。Step 4-4。</summary>
         public const string Replay = "replay";
 
+        /// <summary>
+        /// リーチング課題の円（Step 5-1）。key＝place（置いた・置き直した）か current（円を置いた後に記録を始めた）、
+        /// new＝中心・前の向き・半径・ターゲットの数と大きさ。
+        /// </summary>
+        public const string ReachRing = "reach_ring";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }

@@ -51,6 +51,8 @@ namespace ExtraLimb.UI
         [SerializeField] ConditionRunner runner;
         [Tooltip("空ならシーンから探す（なければ「ログの再生」の欄を出さない）")]
         [SerializeField] LogReplayer replayer;
+        [Tooltip("空ならシーンから探す")]
+        [SerializeField] ReachTask reach;
         [Tooltip("見た目。空なら Resources の StyleResourcePath から読む")]
         [SerializeField] StyleSheet styleSheet;
         [Tooltip("パネルを出すか（ホットキー H で切り替える）。上の大きな表示はいつも出す")]
@@ -78,6 +80,12 @@ namespace ExtraLimb.UI
         readonly Button[,] ratingButtons = new Button[3, ConditionRating.Max];
         Foldout sequenceSection;
         VisualElement sequenceList;
+
+        // リーチング課題
+        Foldout reachSection;
+        Label reachRingLabel, reachReachableLabel, reachLiveLabel, reachMessageLabel;
+        Button reachPlaceButton;
+        Toggle reachIdleToggle, practiceVisibleToggle;
 
         // ログの再生
         Foldout replaySection;
@@ -154,6 +162,7 @@ namespace ExtraLimb.UI
             if (notice == null) notice = FindFirstObjectByType<HmdNotice>();
             if (runner == null) runner = FindFirstObjectByType<ConditionRunner>();
             if (replayer == null) replayer = FindFirstObjectByType<LogReplayer>();
+            if (reach == null) reach = FindFirstObjectByType<ReachTask>();
             if (styleSheet == null) styleSheet = Resources.Load<StyleSheet>(StyleResourcePath);
             // UIDocument を入れ直すと要素が作り直されるので、次の Update で組み立て直す
             built = false;
@@ -225,7 +234,7 @@ namespace ExtraLimb.UI
         {
             panel = new VisualElement();
             panel.AddToClassList("el-panel");
-            var title = new Label("実験者パネル（Step 4-3）　H：隠す");
+            var title = new Label("実験者パネル（Step 5-1）　H：隠す");
             title.AddToClassList("el-panel__title");
             panel.Add(title);
             var scroll = new ScrollView(ScrollViewMode.Vertical);
@@ -240,6 +249,7 @@ namespace ExtraLimb.UI
             }
 
             BuildRunnerSection(scroll);
+            BuildReachSection(scroll);
             BuildLimbSection(scroll);
             BuildStateSection(scroll);
             BuildMappingSection(scroll);
@@ -314,6 +324,22 @@ namespace ExtraLimb.UI
                 row = number - 1;
             }
             runner.CreatePlan(participantField.value, row);
+        }
+
+        void BuildReachSection(VisualElement parent)
+        {
+            if (reach == null) return;
+            reachSection = Section(parent, "リーチング課題（Step 5-1）", true);
+            reachRingLabel = Text("", null, reachSection);
+            reachReachableLabel = Text("", null, reachSection);
+            reachLiveLabel = Text("", null, reachSection);
+            var row = Row(reachSection);
+            reachPlaceButton = Btn(row, "円を置き直す（今の胸の位置と向きで）", () => reach.Place());
+            reachIdleToggle = AddToggle(reachSection, "課題の外でもターゲットの位置を薄く見せる", value => reach.ShowIdleTargets = value);
+            if (practice != null) practiceVisibleToggle = AddToggle(reachSection, "仮のボタンと立方体を出す（円を置くと隠れる）", value => practice.Visible = value);
+            reachMessageLabel = Text("", "el-muted", reachSection);
+            Text("円は最初の Re-center（Space）で、そのときの胸の位置と向き・身長・肩幅から置く。条件を変えても動かない。" +
+                 "座り直したときは置き直す。大きさと位置の比はアセット ReachLayout で変える（変えたら置き直す）", "el-muted", reachSection);
         }
 
         void BuildLimbSection(VisualElement parent)
@@ -725,6 +751,7 @@ namespace ExtraLimb.UI
             RefreshBanner();
             if (!visible) return;
             RefreshRunner();
+            RefreshReach();
             var channel = session.Selected;
             RefreshLimbs(channel);
             if (channel == null) return;
@@ -763,9 +790,10 @@ namespace ExtraLimb.UI
         }
 
         // 上の大きな表示用の短い形（離れても読めるように）
+        // 練習のときは行の頭に「練習」と出るので、ここには付けない
         string RunnerBannerText()
         {
-            string prefix = runner.IsPractice ? "練習：" : "";
+            const string prefix = "";
             switch (runner.Phase)
             {
                 case TrialPhase.Ready: return "準備";
@@ -821,6 +849,8 @@ namespace ExtraLimb.UI
             for (; line < bannerLines.Count; line++) Show(bannerLines[line], false);
 
             var sub = new StringBuilder();
+            // リーチング課題の到達数（上の行は長いので、この行の頭に出す）
+            if (reach != null && reach.IsRunning) sub.Append($"<color=#9be89b>到達 {reach.Hits}</color>　");
             if (recorder != null && recorder.IsRecording)
             {
                 var elapsed = TimeSpan.FromSeconds(recorder.ElapsedSeconds);
@@ -892,6 +922,49 @@ namespace ExtraLimb.UI
             SetText(runnerMessage, runner.Message);
             Show(runnerMessage, runner.Message.Length > 0);
             RefreshSequenceList();
+        }
+
+        void RefreshReach()
+        {
+            if (reach == null || reachSection == null) return;
+            reachIdleToggle?.SetValueWithoutNotify(reach.ShowIdleTargets);
+            if (practice != null) practiceVisibleToggle?.SetValueWithoutNotify(practice.Visible);
+            reachPlaceButton.SetEnabled(!reach.IsRunning);
+            if (!reachSection.value) return;
+
+            var ring = reach.Ring;
+            SetText(reachRingLabel, reach.IsPlaced && reach.Layout != null
+                ? $"円：中心の高さ {ring.center.y * 100f:F0} cm、半径 {ring.radius * 100f:F1} cm、ターゲット {ring.Count} 個（半径 {reach.Layout.targetRadius * 100f:F1} cm）"
+                : "円はまだ置いていません（Re-center（Space）で置く）");
+            reachRingLabel.EnableInClassList("el-caution", !reach.IsPlaced);
+
+            int reachable = reach.CountReachable(out string unreachable);
+            SetText(reachReachableLabel, reachable < 0 ? "" : reachable == ring.Count
+                ? $"追加肢が届くターゲット：{reachable}/{ring.Count}（今の生やす位置で）"
+                : $"追加肢が届くターゲット：{reachable}/{ring.Count}（届かない：{unreachable}）");
+            Show(reachReachableLabel, reachable >= 0);
+            reachReachableLabel.EnableInClassList("el-ok", reachable >= 0 && reachable == ring.Count);
+            reachReachableLabel.EnableInClassList("el-warn", reachable >= 0 && reachable < ring.Count);
+
+            string live;
+            if (reach.IsRunning)
+            {
+                live = $"{(reach.Segment == 1 ? "前半" : "後半")}：到達 {reach.Hits}　点灯中「{ReachRing.PositionName(reach.LitIndex, ring.Count)}」{reach.LitSeconds:F1} 秒";
+                if (reach.Segment == 1) live += $"　本来の手で触れた（数えない）{reach.IgnoredInSegment}";
+                if (reach.LastEffector != EffectorKind.None) live += $"\n直前：{EffectorKinds.Japanese(reach.LastEffector)}で {reach.LastReachSeconds:F2} 秒";
+            }
+            else
+            {
+                var hits1 = runner != null ? runner.HitsInSegment(1) : null;
+                var hits2 = runner != null ? runner.HitsInSegment(2) : null;
+                live = hits1.HasValue || hits2.HasValue
+                    ? $"直前の課題の到達数：前半 {(hits1.HasValue ? hits1.Value.ToString(CultureInfo.InvariantCulture) : "—")}、後半 {(hits2.HasValue ? hits2.Value.ToString(CultureInfo.InvariantCulture) : "—")}"
+                    : "課題をしていません";
+            }
+            SetText(reachLiveLabel, live);
+            reachLiveLabel.EnableInClassList("el-ok", reach.IsRunning);
+            SetText(reachMessageLabel, reach.Message);
+            Show(reachMessageLabel, reach.Message.Length > 0);
         }
 
         void RefreshSequenceList()

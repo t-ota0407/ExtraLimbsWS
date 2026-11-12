@@ -11,6 +11,7 @@ namespace ExtraLimb.Experiment
     /// 把持の確認用に、ボタンの下に小さな台と立方体も置く（Step 3-4）。立方体は追加肢（右トリガー）でも本来の手（グリップ）でも掴め、
     /// 放すと落ちる。「立方体を戻す」かRe-centerで台の上に戻る。
     /// 数と操作は実験者パネル（ExperimenterPanel）に出す（Step 4-2）。
+    /// リーチング課題の円を置くと隠す（Step 5-1、Visible）。パネルからまた出せる。
     /// </summary>
     [DefaultExecutionOrder(10020)]
     public class PracticeButtonBoard : MonoBehaviour
@@ -65,6 +66,22 @@ namespace ExtraLimb.Experiment
         int hits;
         float lastSeconds, totalSeconds;
         readonly System.Random random = new System.Random();
+        bool visible = true;
+
+        /// <summary>
+        /// ボタン・立方体・指先の印を見せるか。隠している間は並べ直さず、押した判定もしない。見せたときに並べ直す。
+        /// </summary>
+        public bool Visible
+        {
+            get => visible;
+            set
+            {
+                if (visible == value) return;
+                visible = value;
+                ApplyVisible();
+                if (visible && session != null) Layout();
+            }
+        }
 
         /// <summary>押したボタンの数。</summary>
         public int Hits => hits;
@@ -109,6 +126,7 @@ namespace ExtraLimb.Experiment
         /// <summary>今の追加肢の位置に合わせて、ボタンを並べ直す（Re-centerと付け替えの直後に呼ばれる）。</summary>
         public void Layout()
         {
+            if (!visible) return;
             var limb = session.Limb;
             if (limb == null || !limb.IsReady) return;
 
@@ -224,8 +242,18 @@ namespace ExtraLimb.Experiment
             targetShownAt = Time.time;
         }
 
+        void ApplyVisible()
+        {
+            foreach (var button in buttons) button.transform.gameObject.SetActive(visible);
+            foreach (var pedestal in pedestals) pedestal.gameObject.SetActive(visible);
+            foreach (var cube in cubes)
+                if (cube != null && !cube.IsHeld) cube.gameObject.SetActive(visible);
+            if (contactMarker != null) contactMarker.gameObject.SetActive(visible);
+        }
+
         void Check()
         {
+            if (!visible) return;
             var limb = session.Limb;
             if (limb == null || !limb.IsReady || buttons.Count == 0) return;
             var contact = limb.ContactPoint;

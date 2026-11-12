@@ -199,7 +199,7 @@ namespace ExtraLimb.Experiment
                             mappingPresetId = mapping.id,
                             mappingName = mapping.name,
                         });
-                Shuffle(cells, new SplitMix(StableHash($"{participantId}|{site}")));
+                Shuffle(cells, new StableRandom(StableHash($"{participantId}|{site}")));
                 for (int i = 0; i < cells.Count; i++)
                 {
                     cells[i].indexInBlock = i;
@@ -212,7 +212,7 @@ namespace ExtraLimb.Experiment
             return plan;
         }
 
-        static void Shuffle<T>(IList<T> list, SplitMix random)
+        static void Shuffle<T>(IList<T> list, StableRandom random)
         {
             for (int i = list.Count - 1; i > 0; i--)
             {
@@ -232,24 +232,40 @@ namespace ExtraLimb.Experiment
             }
             return hash;
         }
+    }
 
-        // 実行環境によらず同じ並びを返す乱数（SplitMix64）
-        sealed class SplitMix
+    /// <summary>
+    /// 実行環境によらず同じ並びを返す乱数（SplitMix64）。提示順（ConditionSequence）とリーチング課題のターゲットの順（ReachTask）に使う。
+    /// System.Random や string.GetHashCode は実行環境で並びが変わることがあるので使わない。
+    /// </summary>
+    public sealed class StableRandom
+    {
+        ulong state;
+
+        public StableRandom(uint seed) => state = seed;
+
+        /// <summary>文字列から種を作る（ConditionSequence.StableHash）。</summary>
+        public StableRandom(string seed) : this(ConditionSequence.StableHash(seed)) { }
+
+        ulong NextUlong()
         {
-            ulong state;
+            state += 0x9E3779B97F4A7C15UL;
+            ulong z = state;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            return z ^ (z >> 31);
+        }
 
-            public SplitMix(uint seed) => state = seed;
+        /// <summary>0 以上 maxExclusive 未満の整数。</summary>
+        public int Next(int maxExclusive) => maxExclusive <= 1 ? 0 : (int)(NextUlong() % (ulong)maxExclusive);
 
-            ulong NextUlong()
-            {
-                state += 0x9E3779B97F4A7C15UL;
-                ulong z = state;
-                z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-                z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-                return z ^ (z >> 31);
-            }
-
-            public int Next(int maxExclusive) => maxExclusive <= 1 ? 0 : (int)(NextUlong() % (ulong)maxExclusive);
+        /// <summary>0 以上 count 未満で、current と違う整数（count が 1 以下なら 0）。</summary>
+        public int NextOther(int count, int current)
+        {
+            if (count <= 1) return 0;
+            if (current < 0 || current >= count) return Next(count);
+            int value = Next(count - 1);
+            return value >= current ? value + 1 : value;
         }
     }
 }
