@@ -244,7 +244,7 @@ namespace ExtraLimb.Experiment
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
                 logger = null;
-                Notify($"記録を始められません：{e.Message}", "記録を始められません（コンソールを見る）");
+                Notify($"記録を開始できません：{e.Message}", "記録を開始できません（コンソールを見る）");
                 Debug.LogError($"[ExtraLimb] {message}", this);
                 return false;
             }
@@ -256,7 +256,7 @@ namespace ExtraLimb.Experiment
             Write(new SessionEvent(SessionEventTypes.LogStart, "session", origin, "folder", "", folder, $"記録を始めました：{logger.Directory}"));
             WriteSnapshot(SessionEventTypes.LogStart);
             UpdateTrackerMap();
-            Notify($"記録を始めました：{folder}", $"記録開始：{folder}");
+            Notify("", $"記録開始：{folder}");
             Debug.Log($"[ExtraLimb] 記録を始めました：{logger.Directory}");
             return true;
         }
@@ -271,7 +271,7 @@ namespace ExtraLimb.Experiment
             int frames = logger.FrameRows;
             logger.Close();
             logger = null;
-            Notify($"記録を止めました（フレーム {frames} 行）：{Path.GetFileName(directory)}", $"記録停止（フレーム {frames} 行）");
+            Notify("", $"記録停止（フレーム {frames} 行）");
             Debug.Log($"[ExtraLimb] 記録を止めました（フレーム {frames} 行）：{directory}");
         }
 
@@ -280,13 +280,13 @@ namespace ExtraLimb.Experiment
         {
             if (!IsRecording)
             {
-                Notify("記録していないので、マーカーは入りません", "記録していません");
+                Notify("記録していないため、マーカーは追加できません", "記録していません");
                 return 0;
             }
             markerCount++;
             string number = markerCount.ToString(CultureInfo.InvariantCulture);
             Write(new SessionEvent(SessionEventTypes.Marker, "session", origin, number, "", note ?? "", $"マーカー {number}" + (string.IsNullOrEmpty(note) ? "" : $"：{note}")));
-            Notify($"マーカー {number} を入れました（{ElapsedSeconds:F1} 秒）", $"マーカー{number} を入れました");
+            Notify($"マーカー {number} を追加しました", $"マーカー{number} を追加しました");
             return markerCount;
         }
 
@@ -297,7 +297,7 @@ namespace ExtraLimb.Experiment
         {
             if (session == null)
             {
-                Notify("LimbSession がないため、設定を保存できません", "設定を保存できません");
+                Notify("追加肢の設定がないため、保存できません", "設定を保存できません");
                 return null;
             }
             var snapshot = session.CreateSnapshot(SessionEventTypes.ConfigSaved);

@@ -19,19 +19,19 @@ namespace ExtraLimb.Tracking.Meta
         {
             get
             {
-                if (cameraRig == null) return "OVRCameraRig がシーンにありません";
-                if (head == null) return "未登録";
-                return $"HMD {State(head)}　左手 {State(leftHand)}　右手 {State(rightHand)}";
+                if (cameraRig == null) return "HMD のカメラがありません（シーンに OVRCameraRig がありません）";
+                if (head == null) return "準備中";
+                // 追跡できていない機器だけを出す（すべて追跡中なら何も出さない）
+                var missing = new System.Collections.Generic.List<string>();
+                if (!IsTracked(head)) missing.Add("HMD");
+                if (!IsTracked(leftHand)) missing.Add("左コントローラー");
+                if (!IsTracked(rightHand)) missing.Add("右コントローラー");
+                if (missing.Count == 0) return "";
+                return missing.Count == 3 ? "HMD とコントローラーを追跡していません" : $"{string.Join("・", missing)}を追跡していません";
             }
         }
 
-        static string State(OVRDevicePoseSource source)
-        {
-            if (source == null) return "なし";
-            if (source.Anchor == null) return "アンカーなし";
-            if (!source.TryGetPose(out _)) return "追跡なし";
-            return source.IsTrackedByXR() ? "追跡中" : "追跡中（OVRのみ）";
-        }
+        static bool IsTracked(OVRDevicePoseSource source) => source != null && source.Anchor != null && source.TryGetPose(out _);
 
         void OnEnable()
         {

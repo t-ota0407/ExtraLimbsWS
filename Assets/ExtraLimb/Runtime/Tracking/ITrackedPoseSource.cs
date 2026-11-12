@@ -41,5 +41,11 @@ namespace ExtraLimb.Tracking
     {
         string ProviderName { get; }
         string StatusText { get; }
+
+        /// <summary>
+        /// 実験者に知らせることがあるか（機器が見つからない、追跡が切れているなど）。実験者パネルはこれが true のものだけを出す。
+        /// 既定では、状態の文があれば true（正常なときに文を出さない部品向け）。
+        /// </summary>
+        bool NeedsAttention => !string.IsNullOrEmpty(StatusText);
     }
 }

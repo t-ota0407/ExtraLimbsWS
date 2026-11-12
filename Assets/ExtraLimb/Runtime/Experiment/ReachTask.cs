@@ -160,16 +160,16 @@ namespace ExtraLimb.Experiment
         /// <summary>今の胸の位置と向き・身長・肩幅で、円を置く（置き直す）。課題の途中は置き直さない。</summary>
         public bool Place()
         {
-            if (IsRunning) return Fail("課題の途中は置き直せません");
-            if (layout == null) return Fail("TaskLayout が設定されていません");
-            if (!TryGetBody(out var chest)) return Fail("体（アバター）の準備ができていないため、円を置けません");
+            if (IsRunning) return Fail("課題中は円を置き直せません");
+            if (layout == null) return Fail("円の設定（ReachLayout）がありません");
+            if (!TryGetBody(out var chest)) return Fail("アバターの準備ができていないため、円を置けません");
             var calibration = body.Calibration;
             ring = layout.Compute(chest, calibration.Height, calibration.ShoulderWidth);
             placed = true;
             BuildVisuals();
             ReportRing("place");
             if (hidePracticeBoardWhenPlaced && practiceBoard != null && practiceBoard.Visible) practiceBoard.Visible = false;
-            Say("円を置きました");
+            Say("");
             return true;
         }
 

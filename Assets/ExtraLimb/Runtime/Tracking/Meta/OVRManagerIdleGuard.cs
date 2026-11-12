@@ -48,11 +48,15 @@ namespace ExtraLimb.Tracking.Meta
             }
         }
 
-        public string ProviderName => "HMD のセッション";
+        public string ProviderName => "HMD";
 
-        public string StatusText => manager == null ? "OVRManager がシーンにありません"
-            : paused ? $"止まっている（OVRManager を止めています。{pauseCount}回目）"
-            : SessionRunning ? "動いている" : "止まっている";
+        /// <summary>
+        /// 機器の状態の一覧には出さない（HMD を追跡していないことは Quest の行に出るので、重ねない）。止めたこと・戻したことはコンソールに出す。
+        /// </summary>
+        public string StatusText => "";
+
+        /// <summary>止めた回数。</summary>
+        public int PauseCount => pauseCount;
 
         void Update()
         {

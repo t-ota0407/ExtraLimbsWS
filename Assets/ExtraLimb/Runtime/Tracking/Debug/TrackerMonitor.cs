@@ -12,6 +12,10 @@ namespace ExtraLimb.Tracking
     /// 「動き」の欄は速さで、トラッカーを振ると強調されるので、どの行がどの実物かを確かめられる。
     /// シーンには各ソースを立方体で描く：基準が部屋のときは入力の Re-center 時の位置を、腰のときは腰を vizOrigin に置く。
     /// Space で Re-center。
+    /// <para>
+    /// 実験者パネルがあるときは、機器の状態はパネルの左上の表示に出すので（StatusShownElsewhere）、ここは一覧を開いたときだけ描く。
+    /// 見た目は実験者パネルにそろえる（同じ字・同じ色）。
+    /// </para>
     /// </summary>
     public class TrackerMonitor : MonoBehaviour
     {
@@ -63,8 +67,27 @@ namespace ExtraLimb.Tracking
         string deltaMessage = "";
         Transform neutralMarker;
         LineRenderer deltaLine;
-        float fps;
         int colorCursor;
+
+        /// <summary>トラッカーの一覧を開いているか。</summary>
+        public bool ListOpen
+        {
+            get => !collapsed;
+            set => collapsed = !value;
+        }
+
+        /// <summary>機器の状態をほかの表示（実験者パネル）が出しているか。true なら、一覧を開いたときだけ描く。</summary>
+        public bool StatusShownElsewhere { get; set; }
+
+        /// <summary>一覧の幅の上限（px）。右に実験者パネルがあるときに、重ならないように狭める。</summary>
+        public float GuiMaxWidth { get; set; } = float.PositiveInfinity;
+
+        /// <summary>一覧の左上の位置（画面の左上から、px）。</summary>
+        public Vector2 GuiPosition
+        {
+            get => guiPosition;
+            set => guiPosition = value;
+        }
 
         void Start()
         {
@@ -90,7 +113,6 @@ namespace ExtraLimb.Tracking
 
         void Update()
         {
-            fps = Mathf.Lerp(fps, 1f / Mathf.Max(Time.unscaledDeltaTime, 1e-4f), 0.05f);
             if (registry == null) return;
 
             var keyboard = Keyboard.current;
@@ -221,74 +243,90 @@ namespace ExtraLimb.Tracking
         void OnGUI()
         {
             if (!showGui) return;
-            int rows = registry != null ? registry.Sources.Count : 0;
-            float width = collapsed ? 400f : 520f;
-            float height = collapsed ? 30f + 22f * (providers.Count + 1) : 200f + 22f * providers.Count + 25f * rows;
-            GUILayout.BeginArea(new Rect(guiPosition.x, guiPosition.y, width, height), GUI.skin.box);
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"<b>入力ソースの一覧</b>　画面更新 {fps:F0} fps", Rich);
-            if (GUILayout.Button(collapsed ? "一覧を開く" : "たたむ", GUILayout.Width(90f))) collapsed = !collapsed;
-            GUILayout.EndHorizontal();
+            if (StatusShownElsewhere && collapsed) return;
+            var ui = MonitorStyles.Get();
+            // 状態は、知らせることがある機器だけを出す（StatusText が空なら出さない）
+            int shown = 0;
             foreach (var provider in providers)
-                GUILayout.Label($"{provider.ProviderName}：{provider.StatusText}");
-            if (collapsed)
+                if (provider.NeedsAttention) shown++;
+            float width = Mathf.Max(320f, Mathf.Min(collapsed ? 400f : 540f, GuiMaxWidth));
+            // 枠は中身の高さに合わせる（文が折り返しても切れないように）
+            GUILayout.BeginArea(new Rect(guiPosition.x, guiPosition.y, width, Mathf.Max(100f, Screen.height - guiPosition.y)));
+            GUILayout.BeginVertical(ui.box);
+            GUILayout.BeginHorizontal();
+            GUILayout.Label(StatusShownElsewhere ? "トラッカーの一覧" : "機器の状態", ui.title);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button(collapsed ? "トラッカーの一覧" : "閉じる", ui.button)) collapsed = !collapsed;
+            GUILayout.EndHorizontal();
+            if (!StatusShownElsewhere)
             {
-                GUILayout.EndArea();
-                return;
+                foreach (var provider in providers)
+                {
+                    string status = provider.StatusText;
+                    if (string.IsNullOrEmpty(status)) continue;
+                    GUILayout.Label(provider.NeedsAttention ? $"<color={MonitorStyles.DangerHex}>●</color>  {provider.ProviderName}：{status}" : $"{provider.ProviderName}：{status}",
+                        provider.NeedsAttention ? ui.label : ui.muted);
+                }
+                if (shown == 0) GUILayout.Label("問題はありません", ui.muted);
             }
-
-            if (registry == null)
+            if (collapsed || registry == null)
             {
-                GUILayout.Label("TrackerRegistryHost がシーンにありません");
+                if (!collapsed) GUILayout.Label("入力ソースの一覧がありません（シーンに TrackerRegistryHost がありません）", ui.muted);
+                GUILayout.EndVertical();
                 GUILayout.EndArea();
                 return;
             }
 
             GUILayout.Label(bindings != null
-                ? "部位のボタンで SteamVR のトラッカーの部位を切り替える（保存されます。使用中の部位は飛ばします）。トラッカーを振ると「動き」が強調されます"
-                : "TrackerBindingService がないため、部位を割り当てられません");
-            GUILayout.Space(2f);
+                ? "部位のボタンを押すと、トラッカーの部位が順に切り替わります（保存されます）。振ったトラッカーは「動き」が黄色になります"
+                : "このシーンでは部位を割り当てられません", ui.muted);
+            GUILayout.Space(6f);
             foreach (var source in registry.Sources)
             {
                 var viz = GetViz(source);
                 bool tracked = source.TryGetPose(out _);
                 bool room = source is FixedPoseSource;
-                GUILayout.BeginHorizontal();
-                GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(room ? Color.gray : viz.color)}>■</color> {source.Id}", Rich, GUILayout.Width(140f));
+                GUILayout.BeginHorizontal(GUILayout.Height(34f));
+                int colon = source.Id.IndexOf(':');
+                string shortId = colon >= 0 ? source.Id.Substring(colon + 1) : source.Id;
+                GUILayout.Label($"<color=#{ColorUtility.ToHtmlStringRGB(room ? Color.gray : viz.color)}>■</color>  {shortId}", ui.label, GUILayout.Width(150f));
                 if (bindings != null && source is IAssignableSite)
                 {
-                    if (GUILayout.Button(BodySiteNames.Japanese(source.Site), GUILayout.Width(90f))) bindings.CycleSite(source.Id);
+                    if (GUILayout.Button(BodySiteNames.Japanese(source.Site), ui.button, GUILayout.Width(96f))) bindings.CycleSite(source.Id);
                 }
                 else
                 {
-                    GUILayout.Label(room ? "部屋（固定）" : BodySiteNames.Japanese(source.Site), GUILayout.Width(90f));
+                    GUILayout.Label(room ? "部屋（固定）" : BodySiteNames.Japanese(source.Site), ui.label, GUILayout.Width(96f));
                 }
-                GUILayout.Label(source.Space.ToString(), GUILayout.Width(60f));
-                GUILayout.Label(tracked ? "追跡中" : "追跡なし", GUILayout.Width(55f));
+                GUILayout.Space(8f);
+                GUILayout.Label(tracked ? "追跡中" : $"<color={MonitorStyles.DangerHex}>追跡なし</color>", tracked ? ui.muted : ui.label, GUILayout.Width(70f));
                 float speed = motion.GetSpeed(source.Id) * 100f;
-                GUILayout.Label(room ? "" : speed >= movingThresholdCmPerSecond ? $"<color=#ffcc44><b>動き {speed,4:F0}</b></color>" : $"動き {speed,4:F0}", Rich, GUILayout.Width(75f));
-                GUILayout.Label(source.Id == inputId ? "<b>入力</b>" : source.Id == referenceId ? "<b>基準</b>" : "", Rich, GUILayout.Width(40f));
+                GUILayout.Label(room ? "" : speed >= movingThresholdCmPerSecond ? $"<color={MonitorStyles.CautionHex}><b>動き {speed,4:F0}</b></color>" : $"動き {speed,4:F0}",
+                    ui.muted, GUILayout.Width(80f));
+                GUILayout.Label(source.Id == inputId ? "<b>入力</b>" : source.Id == referenceId ? "<b>基準</b>" : "", ui.label, GUILayout.Width(44f));
                 GUILayout.EndHorizontal();
             }
 
-            GUILayout.Space(6f);
+            GUILayout.Space(10f);
             if (hasDelta)
             {
                 var dp = lastDelta.position * 100f;
                 float angle = Quaternion.Angle(Quaternion.identity, lastDelta.rotation);
                 bool roomReference = SourceSelector.IsRoom(registry, referenceId);
-                GUILayout.Label($"<b>基準（{(roomReference ? "部屋" : referenceId)}）から見た入力の変位</b>（Re-center時を0、基準の座標）", Rich);
-                GUILayout.Label($"Δx {dp.x,6:F1}　Δy {dp.y,6:F1}　Δz {dp.z,6:F1} cm　|Δ| {dp.magnitude,5:F1} cm　回転 {angle,5:F1}°");
+                GUILayout.Label($"<b>入力の変位</b>　基準：{(roomReference ? "部屋" : referenceId)}。下のボタンを押した時点を 0", ui.label);
+                GUILayout.Label($"Δx {dp.x,6:F1}　Δy {dp.y,6:F1}　Δz {dp.z,6:F1} cm　|Δ| {dp.magnitude,5:F1} cm　回転 {angle,5:F1}°", ui.muted);
             }
             else
             {
-                GUILayout.Label(deltaMessage);
+                GUILayout.Label(deltaMessage, ui.muted);
             }
-            if (GUILayout.Button("Re-center（今の姿勢を0にする）", GUILayout.Width(260f))) recenterRequested = true;
+            GUILayout.Space(4f);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("変位の表示を 0 にする", ui.button)) recenterRequested = true;
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
             GUILayout.EndArea();
         }
-
-        static GUIStyle rich;
-        static GUIStyle Rich => rich ??= new GUIStyle(GUI.skin.label) { richText = true };
     }
 }

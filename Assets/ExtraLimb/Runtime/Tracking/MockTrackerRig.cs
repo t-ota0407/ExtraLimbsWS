@@ -46,6 +46,7 @@ namespace ExtraLimb.Tracking
         public MockBody Body => body;
         public string ProviderName => "仮想トラッカー";
         public string StatusText => body == null ? "停止中" : $"{body.Trackers.Count + 1}台（キーボードで操作）";
+        public bool NeedsAttention => false;
 
         void OnEnable()
         {

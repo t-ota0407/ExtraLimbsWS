@@ -1,35 +1,152 @@
-/* 実験者パネル（Step 4-2）。ExperimenterPanel がコードで組み立てた要素に、このクラスを付ける。 */
+/*
+ * 実験者パネル。ExperimenterPanel がコードで組み立てた要素に、このクラスを付ける。
+ *
+ * 色の決まり：土台はグラファイトの灰色。色は意味のあるところだけに使う。
+ *   ティール（--live）…進行中のもの・選んでいるもの・次に押すボタン（アバターの色にそろえる）
+ *   琥珀（--caution）…確かめてほしいこと（Re-center がまだ、評価の入力中、記録していない）
+ *   赤（--danger）  …異常（追跡切れ、トラッカーが見つからない）と記録中の印
+ *   正常な状態には色を付けない。
+ * 字：Yu Gothic UI（UIFonts）。太字は Semibold で描かれる。
+ */
 
 .el-root {
+    --base: rgb(26, 28, 32);
+    --surface: rgb(34, 37, 43);
+    --control: rgb(44, 48, 55);
+    --control-hover: rgb(54, 59, 67);
+    --control-active: rgb(36, 39, 45);
+    --line: rgb(46, 50, 56);
+    --line-strong: rgb(60, 65, 73);
+    --text: rgb(236, 234, 229);
+    --text-2: rgb(163, 167, 174);
+    --text-3: rgb(112, 117, 125);
+    --live: rgb(92, 194, 189);
+    --live-strong: rgb(118, 212, 207);
+    --live-ink: rgb(14, 36, 35);
+    --live-tint: rgba(92, 194, 189, 0.18);
+    --live-tint-text: rgb(205, 242, 239);
+    --caution: rgb(224, 177, 92);
+    --danger: rgb(232, 102, 92);
+    --danger-soft: rgb(236, 138, 128);
+
     flex-grow: 1;
     font-size: 13px;
-    color: rgb(232, 232, 232);
+    color: var(--text);
 }
 
-/* ---- 画面上部の大きな表示 ---- */
+/* ======== 左上の表示（離れても読めるように、ここだけ大きく） ======== */
 
 .el-banner {
     position: absolute;
-    left: 10px;
-    top: 6px;
-    padding: 4px 12px;
-    background-color: rgba(10, 12, 16, 0.72);
-    border-radius: 6px;
+    left: 12px;
+    top: 12px;
+    min-width: 380px;
+    padding: 12px 16px 12px 16px;
+    background-color: rgba(20, 22, 26, 0.88);
+    border-radius: 10px;
 }
 
-.el-banner__line {
+.el-banner__meta {
+    font-size: 13px;
+    color: var(--text-2);
+    white-space: nowrap;
+}
+
+.el-banner__headline {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-top: 1px;
+}
+
+.el-banner__phase {
     font-size: 21px;
     -unity-font-style: bold;
     white-space: nowrap;
+    margin-bottom: 3px;
 }
 
-.el-banner__sub {
-    font-size: 14px;
-    color: rgb(190, 196, 206);
+.el-banner__timer {
+    font-size: 36px;
+    -unity-font-style: bold;
+    -unity-text-align: lower-right;
+    white-space: nowrap;
+    margin-left: 28px;
+}
+
+.el-banner__progress {
+    height: 3px;
+    margin: 6px 0 10px 0;
+    background-color: rgba(255, 255, 255, 0.09);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.el-banner__progress-fill {
+    height: 100%;
+    width: 0;
+    background-color: var(--live);
+    border-radius: 2px;
+}
+
+.el-banner__limb {
+    flex-direction: row;
+    align-items: center;
+    margin: 1px 0;
+}
+
+.el-banner__limb-text {
+    font-size: 16px;
     white-space: nowrap;
 }
 
-/* ---- 右のパネル ---- */
+.el-banner__status {
+    font-size: 13px;
+    color: var(--text-2);
+    white-space: nowrap;
+    margin-top: 6px;
+}
+
+.el-banner__devices {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top-width: 1px;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.el-banner__device {
+    font-size: 13px;
+    white-space: nowrap;
+    margin: 1px 0;
+}
+
+/* 小さな札（追跡切れなど） */
+.el-pill {
+    font-size: 12px;
+    -unity-font-style: bold;
+    padding: 1px 8px;
+    margin-left: 10px;
+    border-radius: 9px;
+    white-space: nowrap;
+}
+
+.el-pill--danger {
+    color: rgb(255, 236, 233);
+    background-color: rgb(176, 64, 56);
+}
+
+/* 文字の色（左上の表示とパネルで共通） */
+
+.el-live {
+    color: var(--live);
+}
+
+.el-banner .el-caution,
+.el-caution {
+    color: var(--caution);
+}
+
+/* ======== 右のパネル ======== */
 
 /* 画面の右端に寄せる。第三者視点のカメラはこの幅を除いた左側に描く */
 .el-panel {
@@ -38,66 +155,222 @@
     top: 0;
     bottom: 0;
     width: 448px;
-    background-color: rgb(24, 26, 31);
+    background-color: var(--base);
     border-left-width: 1px;
-    border-color: rgb(60, 64, 72);
-    padding: 6px 4px 4px 6px;
+    border-color: var(--line);
+}
+
+.el-panel__header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px 10px 16px;
+    border-bottom-width: 1px;
+    border-color: var(--line);
 }
 
 .el-panel__title {
-    font-size: 15px;
+    font-size: 14px;
     -unity-font-style: bold;
-    margin: 2px 4px 4px 4px;
 }
 
+.el-panel__hint {
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+.el-panel .unity-scroll-view__content-container {
+    padding: 0 12px 24px 16px;
+}
+
+/* スクロールバー：細く、矢印なし */
+.el-panel .unity-scroller--vertical {
+    width: 10px;
+    min-width: 10px;
+    margin: 0;
+    border-width: 0;
+    background-color: transparent;
+}
+
+.el-panel .unity-scroller__low-button,
+.el-panel .unity-scroller__high-button {
+    display: none;
+}
+
+.el-panel .unity-scroller--vertical > .unity-scroller__slider {
+    width: 10px;
+    margin: 4px 0 4px 0;
+    top: 0;
+    bottom: 0;
+}
+
+.el-panel .unity-scroller--vertical .unity-base-slider__tracker {
+    width: 10px;
+    left: 0;
+    margin: 0;
+    background-color: transparent;
+    border-width: 0;
+}
+
+.el-panel .unity-scroller--vertical .unity-base-slider__dragger {
+    width: 4px;
+    left: 3px;
+    margin: 0;
+    background-color: var(--line-strong);
+    border-width: 0;
+    border-radius: 2px;
+}
+
+.el-panel .unity-scroller--vertical .unity-base-slider__dragger:hover {
+    background-color: rgb(84, 90, 100);
+}
+
+/* ---- 欄（たためる見出し） ---- */
+
 .el-section {
-    margin: 2px 0 4px 0;
-    padding: 2px 4px 4px 4px;
-    border-top-width: 1px;
-    border-color: rgb(55, 58, 66);
+    margin: 0;
+    padding: 0;
+    border-bottom-width: 1px;
+    border-color: var(--line);
 }
 
 .el-section > .unity-foldout__toggle {
     margin: 0;
+    padding: 11px 0 11px 0;
+}
+
+/* 開閉の印は右端に置き、見出しの字を中身の左端にそろえる */
+.el-section > .unity-foldout__toggle > .unity-toggle__input {
+    flex-direction: row-reverse;
+    justify-content: space-between;
 }
 
 .el-section .unity-foldout__text {
+    font-size: 13px;
     -unity-font-style: bold;
-    color: rgb(160, 205, 255);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
 }
 
-.el-section .unity-foldout__content {
-    margin-left: 4px;
+.el-section .unity-foldout__checkmark {
+    -unity-background-image-tint-color: var(--text-3);
+    margin: 0 2px 0 0;
 }
+
+/* 下の余白は中身に付ける（たたんだ欄は上下が同じ高さになる） */
+.el-section > .unity-foldout__content {
+    margin: -5px 0 0 0;
+    padding: 0 0 14px 0;
+}
+
+/* 欄にじかに置いたボタン（割り当て・リセットなど）。左右を中身の端にそろえる */
+.el-button.el-button--block {
+    margin: 3px 0;
+}
+
+/* 欄の中の小さな欄（提示順の一覧） */
+.el-section--sub {
+    padding: 0;
+    border-bottom-width: 0;
+}
+
+.el-section--sub > .unity-foldout__toggle {
+    padding: 8px 0 8px 0;
+}
+
+.el-section--sub > .unity-foldout__content {
+    padding: 0;
+}
+
+.el-section--sub .unity-foldout__text {
+    font-size: 12px;
+    color: var(--text-2);
+}
+
+/* ---- 並び ---- */
 
 .el-row {
     flex-direction: row;
     align-items: center;
     flex-wrap: wrap;
-    margin: 1px 0;
+    margin: 3px -3px;
 }
+
+.el-row--nowrap {
+    flex-wrap: nowrap;
+}
+
+/* 欄の中の小見出し（生やす位置・入力の部位など）。右に操作キーや小さなボタンを置く */
+.el-subheader {
+    flex-direction: row;
+    align-items: center;
+    margin: 12px 0 3px 0;
+}
+
+.el-subheading {
+    font-size: 12px;
+    -unity-font-style: bold;
+    color: var(--text-2);
+}
+
+.el-subheader > .el-text {
+    margin: 0 8px 0 0;
+}
+
+.el-subheader > .el-muted {
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+.el-row > .el-segmented {
+    margin: 0 3px;
+}
+
+.el-spacer {
+    flex-grow: 1;
+}
+
+/* ---- 文字 ---- */
 
 .el-text {
     white-space: normal;
-    margin: 1px 2px;
+    margin: 2px 0;
     padding: 0;
 }
 
+.el-row > .el-text {
+    margin: 0 3px;
+}
+
+.el-field-label {
+    color: var(--text-2);
+}
+
+.el-row > .el-field-label {
+    margin: 0 6px 0 3px;
+}
+
+.el-unit {
+    color: var(--text-3);
+}
+
+.el-row > .el-unit {
+    margin: 0 10px 0 -1px;
+}
+
 .el-muted {
-    color: rgb(150, 156, 166);
+    color: var(--text-2);
 }
 
 .el-warn {
-    color: rgb(255, 122, 102);
+    color: var(--danger-soft);
     -unity-font-style: bold;
 }
 
-.el-caution {
-    color: rgb(255, 204, 68);
-}
-
+/* 正常な状態：色を付けない */
 .el-ok {
-    color: rgb(123, 216, 143);
+    color: var(--text-2);
 }
 
 .el-mono {
@@ -105,48 +378,217 @@
     -unity-text-align: middle-right;
 }
 
+/* ---- ボタン ---- */
+
 .el-button {
-    margin: 1px 2px;
-    padding: 2px 8px;
-    min-height: 24px;
-    background-color: rgb(58, 63, 74);
-    border-color: rgb(88, 94, 106);
-    color: rgb(235, 235, 235);
-    border-radius: 3px;
+    margin: 0 3px;
+    padding: 0 10px;
+    min-height: 30px;
+    background-color: var(--control);
+    border-width: 0;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
 }
 
 .el-button:hover {
-    background-color: rgb(74, 80, 94);
+    background-color: var(--control-hover);
 }
 
 .el-button:active {
-    background-color: rgb(40, 44, 52);
+    background-color: var(--control-active);
 }
 
-.el-button--selected {
-    background-color: rgb(42, 104, 172);
-    border-color: rgb(110, 170, 240);
-}
-
-.el-button--selected:hover {
-    background-color: rgb(52, 118, 190);
+.el-button:disabled {
+    opacity: 0.38;
 }
 
 .el-button--grow {
     flex-grow: 1;
+    flex-basis: 0;
 }
 
-.el-button:disabled {
-    opacity: 0.45;
+/* 次に押すボタン */
+.el-button--primary {
+    background-color: var(--live);
+    color: var(--live-ink);
+    -unity-font-style: bold;
 }
+
+.el-button--primary:hover {
+    background-color: var(--live-strong);
+}
+
+/* 中止 */
+.el-button--danger {
+    color: var(--danger-soft);
+}
+
+/* 選んでいるもの（一覧の行・単独のボタン） */
+.el-button--selected {
+    background-color: var(--live-tint);
+    color: var(--live-tint-text);
+}
+
+.el-button--selected:hover {
+    background-color: rgba(92, 194, 189, 0.26);
+}
+
+/* トラッカーが見つからない入力の部位 */
+.el-button--missing {
+    color: var(--danger-soft);
+}
+
+/* 字だけのボタン（小見出しの右など） */
+.el-button--link {
+    min-height: 22px;
+    padding: 0 6px;
+    margin: 0;
+    background-color: transparent;
+    color: var(--live);
+    font-size: 12px;
+}
+
+.el-button--link:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* 一覧の行（提示順の一覧） */
+.el-list-button {
+    -unity-text-align: middle-left;
+    min-height: 26px;
+    margin: 1px 0;
+    background-color: transparent;
+    color: var(--text-2);
+}
+
+.el-list-button.el-button--selected {
+    background-color: var(--live-tint);
+    color: var(--live-tint-text);
+}
+
+/* ---- つながった切り替えボタン（生やす位置・入力の部位・型・評価） ---- */
+
+.el-segmented {
+    flex-direction: row;
+    flex-grow: 1;
+    margin: 3px 0;
+    padding: 2px;
+    background-color: var(--surface);
+    border-width: 1px;
+    border-color: var(--line);
+    border-radius: 8px;
+}
+
+.el-segmented > .el-button {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 28px;
+    margin: 0;
+    padding: 0 6px;
+    background-color: transparent;
+    color: var(--text-2);
+    border-radius: 6px;
+}
+
+.el-segmented > .el-button:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+}
+
+.el-segmented > .el-button--selected {
+    background-color: var(--live-tint);
+    color: var(--live-tint-text);
+    -unity-font-style: bold;
+}
+
+.el-segmented > .el-button--selected:hover {
+    background-color: rgba(92, 194, 189, 0.26);
+    color: var(--live-tint-text);
+}
+
+.el-segmented > .el-button--missing {
+    color: var(--danger-soft);
+}
+
+.el-segmented > .el-button--selected.el-button--missing {
+    background-color: rgba(232, 102, 92, 0.18);
+    color: rgb(255, 196, 189);
+}
+
+.el-segmented--compact > .el-button {
+    min-height: 26px;
+    padding: 0;
+}
+
+/* ---- 入力欄 ---- */
+
+.el-field {
+    width: 56px;
+    margin: 0 3px;
+}
+
+.el-field .unity-base-text-field__input,
+.el-field .unity-text-field__input {
+    min-height: 30px;
+    padding: 0 8px;
+    background-color: var(--surface);
+    color: var(--text);
+    border-width: 1px;
+    border-color: var(--line-strong);
+    border-radius: 6px;
+    -unity-text-align: middle-left;
+}
+
+.el-field:focus .unity-base-text-field__input,
+.el-field:focus .unity-text-field__input {
+    border-color: var(--live);
+}
+
+.el-field .unity-base-text-field__input--placeholder,
+.el-field .unity-text-element--placeholder {
+    color: var(--text-3);
+}
+
+/* ---- チェックボックス ---- */
 
 .el-toggle {
-    margin: 1px 6px 1px 2px;
+    margin: 4px 0;
+}
+
+.el-row > .el-toggle {
+    margin: 0 10px 0 3px;
+}
+
+.el-toggle .unity-toggle__checkmark {
+    width: 16px;
+    height: 16px;
+    background-color: var(--surface);
+    border-width: 1px;
+    border-color: rgb(78, 84, 93);
+    border-radius: 4px;
+    -unity-background-image-tint-color: rgba(0, 0, 0, 0);
+    -unity-background-scale-mode: scale-to-fit;
+}
+
+.el-toggle:hover .unity-toggle__checkmark {
+    border-color: rgb(104, 111, 121);
+}
+
+.el-toggle:checked .unity-toggle__checkmark,
+.el-toggle .unity-toggle__input:checked > .unity-toggle__checkmark {
+    background-color: var(--live);
+    border-color: var(--live);
+    -unity-background-image-tint-color: var(--live-ink);
 }
 
 .el-toggle .unity-toggle__text {
-    color: rgb(232, 232, 232);
-    margin-left: 3px;
+    color: var(--text);
+    margin-left: 8px;
+}
+
+.el-toggle:disabled {
+    opacity: 0.38;
 }
 
 .el-toggle .unity-base-field__label {
@@ -155,25 +597,18 @@
     display: none;
 }
 
-.el-field {
-    width: 56px;
-    margin: 1px 2px;
-}
-
-.el-field .unity-text-field__input {
-    background-color: rgb(40, 43, 50);
-    color: rgb(240, 240, 240);
-    border-color: rgb(88, 94, 106);
-}
+/* ---- 入力の詳細の表 ---- */
 
 .el-table-row {
     flex-direction: row;
     align-items: center;
+    margin: 1px 0;
 }
 
 .el-table-row > Label {
     margin: 0 2px;
     padding: 0;
+    color: var(--text-2);
 }
 
 .el-col-name {
@@ -189,48 +624,60 @@
     width: 26px;
 }
 
-.el-used {
+.el-table-row > .el-used {
     -unity-font-style: bold;
-    color: rgb(255, 255, 255);
+    color: var(--text);
 }
+
+/* ---- ホットキーの一覧 ---- */
 
 .el-hotkey-row {
     flex-direction: row;
+    margin: 2px 0;
 }
 
 .el-hotkey-key {
-    width: 110px;
-    color: rgb(255, 214, 120);
+    width: 104px;
+    flex-shrink: 0;
+    color: var(--text-2);
+    font-size: 12px;
 }
 
-/* ---- 条件の進行（Step 4-3） ---- */
+/* ---- 条件の進行 ---- */
 
 .el-condition {
-    font-size: 15px;
+    font-size: 16px;
     -unity-font-style: bold;
-    color: rgb(255, 255, 255);
+    color: var(--text);
+    margin: 2px 0 2px 0;
+}
+
+.el-condition.el-muted {
+    font-size: 13px;
+    -unity-font-style: normal;
+    color: var(--text-2);
 }
 
 .el-phase {
-    font-size: 15px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    margin-top: 6px;
+}
+
+.el-rating-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 2px 0;
 }
 
 .el-rating-label {
-    width: 196px;
+    width: 186px;
+    flex-shrink: 0;
     white-space: normal;
-}
-
-.el-button--rating {
-    min-width: 26px;
-    padding: 2px 4px;
-    margin: 1px;
+    margin: 0 8px 0 0;
 }
 
 .el-current {
-    color: rgb(255, 214, 120);
+    color: var(--caution);
     -unity-font-style: bold;
-}
-
-.el-list-button {
-    -unity-text-align: middle-left;
 }

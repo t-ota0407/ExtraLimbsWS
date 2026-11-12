@@ -245,7 +245,7 @@ namespace ExtraLimb.Experiment
             string previous = hadForward ? VectorText(Pipeline.BodyFrame.Forward) : "";
             if (Pipeline.TryRecordForward(referencePose, inputPose, owner.MinForwardGestureMeters))
             {
-                ForwardMessage = $"前を記録しました（水平の変位 {horizontal.magnitude * 100f:F1} cm）";
+                ForwardMessage = $"前の向きを記録しました（前へ出した距離 {horizontal.magnitude * 100f:F1} cm）";
                 owner.OnForwardRecorded(this);
                 Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {Pipeline.BodyFrame.Forward.ToString("F2")}");
                 owner.Raise(SessionEventTypes.Forward, Subject, ReferenceId, previous, VectorText(Pipeline.BodyFrame.Forward),
@@ -253,7 +253,7 @@ namespace ExtraLimb.Experiment
             }
             else
             {
-                ForwardMessage = $"前を記録できません：水平の変位が {horizontal.magnitude * 100f:F1} cm（{owner.MinForwardGestureMeters * 100f:F0} cm 以上、前へ出して押す）";
+                ForwardMessage = $"前の向きを記録できません：前へ出した距離が {horizontal.magnitude * 100f:F1} cm です（{owner.MinForwardGestureMeters * 100f:F0} cm 以上必要）";
                 Debug.LogWarning($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}");
                 owner.Raise(SessionEventTypes.ForwardFailed, Subject, ReferenceId, "", "", $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
             }
@@ -287,7 +287,7 @@ namespace ExtraLimb.Experiment
             Pipeline.BodyFrame.ClearForward();
             var bindings = owner.Bindings;
             if (bindings != null && bindings.TryGetForward(ReferenceId, out var forward) && Pipeline.BodyFrame.TrySetForward(forward, 0.01f))
-                ForwardMessage = "前の向き：保存した値を使っています";
+                ForwardMessage = "保存した前の向きを使っています";
             else
                 ForwardMessage = "";
         }
@@ -297,27 +297,27 @@ namespace ExtraLimb.Experiment
             referencePose = inputPose = default;
             if (!registry.TryGet(InputId, out var input))
             {
-                StatusMessage = $"「{BodySiteNames.Japanese(Config.inputSite)}」のトラッカーがありません。そのトラッカーを振って、上のボタンで割り当ててください";
+                StatusMessage = $"{BodySiteNames.Japanese(Config.inputSite)}のトラッカーが見つかりません";
                 return false;
             }
             if (!registry.TryGet(ReferenceId, out var reference))
             {
-                StatusMessage = $"基準がありません（{input.Space} の部屋が登録されていません）";
+                StatusMessage = "基準（部屋）が見つかりません";
                 return false;
             }
             if (reference.Space != input.Space)
             {
-                StatusMessage = $"基準と入力の空間が違います（{reference.Space} と {input.Space}）";
+                StatusMessage = "基準と入力の座標系が合っていません";
                 return false;
             }
             if (!reference.TryGetPose(out referencePose))
             {
-                StatusMessage = "基準の追跡が切れています。手先は止めています";
+                StatusMessage = "基準の追跡が切れています（手先は止めています）";
                 return false;
             }
             if (!input.TryGetPose(out inputPose))
             {
-                StatusMessage = "入力の追跡が切れています。手先は止めています";
+                StatusMessage = $"{BodySiteNames.Japanese(Config.inputSite)}のトラッカーの追跡が切れています（手先は止めています）";
                 return false;
             }
             StatusMessage = "動作中";

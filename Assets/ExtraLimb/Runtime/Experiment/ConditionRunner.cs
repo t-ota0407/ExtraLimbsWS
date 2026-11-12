@@ -300,7 +300,7 @@ namespace ExtraLimb.Experiment
             var mount = session != null ? session.Primary?.Mount : null;
             if (mount == null)
             {
-                Say("生やす位置の一覧（LimbMountController）がないため、提示順を作れません");
+                Say("生やす位置が設定されていないため、提示順を作れません");
                 return false;
             }
 
@@ -343,7 +343,7 @@ namespace ExtraLimb.Experiment
             Report(SessionEventTypes.Sequence, "session", participantId, "", order,
                 $"提示順を作りました：{participantId}、ブロックの順 {order}、全{plan.Count}条件");
             recorder?.SaveJson(SequenceFileName, JsonUtility.ToJson(plan, true));
-            Say($"提示順を作りました（全{plan.Count}条件）。次へ（PgDn）で1つ目を読み込みます");
+            Say("");
             Debug.Log($"[ExtraLimb] 提示順：{participantId}、ブロックの順 {order}、全{plan.Count}条件");
             return true;
         }
@@ -379,7 +379,7 @@ namespace ExtraLimb.Experiment
             if (announce) notice?.Show(conditionChangedText, 0f);
             SetPhase(TrialPhase.Ready);
             ConditionLoaded?.Invoke(spec);
-            Say($"条件 {index + 1}/{plan.Count} を読み込みました。Re-center（Space）して動かし方を伝え、開始（Enter）");
+            Say("");
             return true;
         }
 
@@ -420,7 +420,7 @@ namespace ExtraLimb.Experiment
         /// <summary>次の条件を読み込む（PageDown）。</summary>
         public bool Next()
         {
-            if (!HasPlan) return Fail("提示順がありません。参加者IDを入れて「提示順を作る」");
+            if (!HasPlan) return Fail("提示順がありません（参加者IDを入れて「提示順を作成」）");
             if (currentIndex + 1 >= plan.Count) return Fail("最後の条件です");
             return Load(currentIndex + 1);
         }
@@ -448,8 +448,8 @@ namespace ExtraLimb.Experiment
         public bool StartTrial()
         {
             if (phase != TrialPhase.Ready)
-                return Fail(phase == TrialPhase.Idle ? "条件を読み込んでから（次へ：PgDn）" :
-                    IsRunning ? "課題の途中です" : "今の条件は終わっています（やり直すときは R、次へは PgDn）");
+                return Fail(phase == TrialPhase.Idle ? "先に条件を読み込んでください（次へ：PgDn）" :
+                    IsRunning ? "課題の途中です" : "この条件は終わっています（やり直しは R、次へは PgDn）");
             if (Current == null) return Fail("条件を読み込んでいません");
             BeginTrial(false);
             return true;
@@ -484,7 +484,7 @@ namespace ExtraLimb.Experiment
                     $"条件 {currentIndex + 1} の課題を始めました（{attempts[currentIndex]}回目）" + (matchesAtStart ? "" : "。設定が条件と違います"));
             SetPhase(TrialPhase.Lead);
             ProcessCues();
-            Say(practice ? "練習中（今の設定）。止めるときは Esc" : "課題中。止めるときは Esc");
+            Say("");
         }
 
         /// <summary>課題を中止する（Esc）。同じ条件の始め（準備）に戻る。評価の入力中なら評価を捨てる。</summary>
@@ -509,7 +509,7 @@ namespace ExtraLimb.Experiment
                 {
                     if (StatusOf(currentIndex) != ConditionStatus.Done) statuses[currentIndex] = ConditionStatus.Aborted;
                     SetPhase(TrialPhase.Ready);
-                    Say("中止しました。準備ができたら開始（Enter）");
+                    Say("中止しました");
                 }
                 return true;
             }
@@ -520,7 +520,7 @@ namespace ExtraLimb.Experiment
                 if (StatusOf(currentIndex) != ConditionStatus.Done) statuses[currentIndex] = ConditionStatus.Aborted;
                 rating.Clear();
                 SetPhase(TrialPhase.Ready);
-                Say("評価をやめました。やり直すときは開始（Enter）");
+                Say("評価を中止しました");
                 return true;
             }
             return false;
@@ -603,7 +603,7 @@ namespace ExtraLimb.Experiment
             }
             rating.Clear();
             SetPhase(TrialPhase.Rating);
-            Say($"口頭評価を入れてください（数字キー 1〜7。次は「{ConditionRating.ItemNames[0]}」）");
+            Say("");
         }
 
         // ---- 口頭評価 ----
@@ -654,7 +654,7 @@ namespace ExtraLimb.Experiment
                 CompleteCondition();
                 return;
             }
-            Say($"次は「{ConditionRating.ItemNames[rating.Cursor]}」");
+            Say("");
         }
 
         void CompleteCondition()
@@ -671,7 +671,7 @@ namespace ExtraLimb.Experiment
                 notice?.Show(finishedText, 3f);
                 int remaining = plan.Count - DoneCount;
                 Report(SessionEventTypes.Finished, "session", "", "", Int(DoneCount), "最後の条件を終えました");
-                Say(remaining == 0 ? "すべての条件を終えました" : $"最後の条件を終えました（まだ終えていない条件が {remaining} あります。一覧から選べます）");
+                Say(remaining == 0 ? "" : $"終えていない条件が {remaining} あります（提示順の一覧から選べます）");
             }
             else if (plan.conditions[currentIndex + 1].block != spec.block)
             {
@@ -679,12 +679,12 @@ namespace ExtraLimb.Experiment
                 SetPhase(TrialPhase.Break);
                 notice?.Show(breakText, 3f);
                 Report(SessionEventTypes.Break, "session", Number(spec.block), "", "", $"ブロック {spec.block + 1}/{plan.BlockCount}（{spec.inputSiteName}）を終えました。休憩");
-                Say($"ブロック {spec.block + 1}/{plan.BlockCount} が終わりました。休憩（HMDを外す）。次へ（PgDn）で次のブロック");
+                Say("");
             }
             else
             {
                 SetPhase(TrialPhase.Done);
-                Say("次へ（PgDn）で次の条件");
+                Say("");
             }
         }
 

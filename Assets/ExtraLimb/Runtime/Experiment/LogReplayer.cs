@@ -58,6 +58,9 @@ namespace ExtraLimb.Experiment
 
         public string ProviderName => "ログの再生";
 
+        /// <summary>再生の状態は実験者パネルの「ログの再生」の欄と左上の表示に出すので、機器の異常としては知らせない。</summary>
+        public bool NeedsAttention => false;
+
         public string StatusText
         {
             get

@@ -61,11 +61,13 @@ namespace ExtraLimb.Body
         {
             get
             {
-                if (registry == null) return "TrackerRegistryHost がありません";
-                if (!registry.TryGet(headSourceId, out _)) return $"頭の入力ソース {headSourceId} が見つかりません";
-                if (preUpdateCount == 0) return "VRIK がまだ動いていません";
-                if (!headEverTracked) return $"頭（{headSourceId}）の追跡を待っています。体は動かしません";
-                return $"頭 {(headTrackedNow ? "追跡中" : "追跡なし（最後の姿勢）")}、追跡中のターゲット {TrackedTargetCount}/3";
+                // 機器の状態の一覧に出す文。問題がなければ何も出さない
+                if (registry == null) return "入力ソースの一覧がありません";
+                // 頭の入力ソースそのものがないシーン（DesktopDev など）では何も出さない
+                if (!registry.TryGet(headSourceId, out _)) return "";
+                // HMD とコントローラーの追跡の状態は Quest の行に出るので、ここでは重ねて出さない
+                if (preUpdateCount == 0) return "準備中";
+                return "";
             }
         }
 
@@ -146,7 +148,7 @@ namespace ExtraLimb.Body
             // 頭の入力ソースそのものがないシーン（DesktopDev など）では警告しない
             if (registry == null || !registry.TryGet(headSourceId, out _)) return;
             warnedNoHead = true;
-            Debug.LogWarning($"[ExtraLimb] 自分のアバター：5秒たっても頭を追跡できません（{StatusText}）");
+            Debug.LogWarning($"[ExtraLimb] 自分のアバター：5秒たっても頭（{headSourceId}）を追跡できません。追跡できるまで体は動かしません");
         }
 
         void OnDisable()

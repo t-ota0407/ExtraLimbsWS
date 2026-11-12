@@ -36,6 +36,17 @@ namespace ExtraLimb.Tracking.OpenVR
         public IReadOnlyCollection<OpenVRTrackerSource> Sources => sourcesBySerial.Values;
         public string ProviderName => "SteamVR";
 
+        /// <summary>つながっていない、トラッカーがない、追跡していないトラッカーがあるときに true。</summary>
+        public bool NeedsAttention
+        {
+            get
+            {
+                if (system == null || sourcesBySerial.Count == 0) return true;
+                foreach (var source in sourcesBySerial.Values) if (!source.TryGetPose(out _)) return true;
+                return false;
+            }
+        }
+
         public string StatusText
         {
             get
@@ -44,11 +55,14 @@ namespace ExtraLimb.Tracking.OpenVR
                 {
                     int tracked = 0;
                     foreach (var source in sourcesBySerial.Values) if (source.TryGetPose(out _)) tracked++;
-                    return $"接続中（トラッカー {sourcesBySerial.Count}台、追跡中 {tracked}台）";
+                    if (sourcesBySerial.Count == 0) return "トラッカーが見つかりません";
+                    return tracked == sourcesBySerial.Count
+                        ? $"トラッカー {tracked}台を追跡中"
+                        : $"トラッカー {sourcesBySerial.Count}台のうち {sourcesBySerial.Count - tracked}台を追跡していません";
                 }
                 if (lastError == EVRInitError.Init_NoServerForBackgroundApp)
-                    return "SteamVRが起動していません（起動すると自動で接続します）";
-                return $"未接続（{lastError}）。{retryIntervalSeconds:F0}秒ごとに接続し直します";
+                    return "SteamVR が起動していません（起動すると自動で接続します）";
+                return "SteamVR に接続できません（自動で接続し直します）";
             }
         }
 
