@@ -195,6 +195,26 @@ namespace ExtraLimb.Tests.EditMode
         }
 
         [Test]
+        public void WithBothSides_AddsOppositeSideOnce()
+        {
+            var configured = new[]
+            {
+                BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow,
+                BodySite.Waist, BodySite.Head, BodySite.LeftHand, BodySite.RightHand,
+            };
+            var sites = ExperimentRecorder.WithBothSides(configured);
+
+            Assert.That(sites.Take(8), Is.EqualTo(configured), "設定した部位はその順のまま");
+            Assert.That(sites.Skip(8), Is.EqualTo(new[] { BodySite.LeftAnkle, BodySite.LeftKnee, BodySite.LeftShoulder, BodySite.LeftElbow }),
+                "左の足首・膝・肩・肘を足す（左右の手はもうある）");
+            Assert.That(ExperimentRecorder.WithBothSides(new[] { BodySite.LeftKnee, BodySite.LeftKnee, BodySite.Unknown }),
+                Is.EqualTo(new[] { BodySite.LeftKnee, BodySite.RightKnee }));
+            Assert.That(ExperimentRecorder.WithBothSides(null), Is.Empty);
+            // 5（共通）＋ 21 × 2（追加肢）＋ 6（本来の手）＋ 8 × 12（部位）
+            Assert.That(ExperimentRecorder.FrameColumns(sites).Count, Is.EqualTo(149));
+        }
+
+        [Test]
         public void SiteColumnName_IsSnakeCase()
         {
             Assert.That(ExperimentRecorder.SiteColumnName(BodySite.RightAnkle), Is.EqualTo("right_ankle"));

@@ -42,7 +42,7 @@ namespace ExtraLimb.Experiment
         [SerializeField] int frameStride = 1;
         [Tooltip("frames.csv をファイルへ書き出す間隔（秒）。落ちたときに失うのはこの間の分")]
         [SerializeField] float flushIntervalSeconds = 1f;
-        [Tooltip("frames.csv に生の姿勢を書く部位（同じ部位の入力の選び方：SteamVR → 仮想 → Quest）")]
+        [Tooltip("frames.csv に生の姿勢を書く部位（同じ部位の入力の選び方：SteamVR → 仮想 → Quest）。左右のある部位は、反対側も自動で足す（追加肢は左右2本）")]
         [SerializeField] BodySite[] trackerSites =
         {
             BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow,
@@ -78,6 +78,7 @@ namespace ExtraLimb.Experiment
         TrackerRegistry registry;
         readonly CsvRow row = new CsvRow();
         string[] trackerIds = Array.Empty<string>();
+        BodySite[] recordedSites = Array.Empty<BodySite>();
         double startRealtime;
         float lastFlush;
         int markerCount;
@@ -170,6 +171,25 @@ namespace ExtraLimb.Experiment
             return columns;
         }
 
+        /// <summary>
+        /// frames.csv に書く部位：sites の順に並べ、その後に、左右のある部位の反対側でまだないものを足す（2026-11-13。追加肢を左右2本にしたので、
+        /// 左の足首・膝・肩・肘も記録し、ログ再生で左の追加肢の入力も再現できるようにする）。同じ部位は1回だけ。
+        /// </summary>
+        public static BodySite[] WithBothSides(IReadOnlyList<BodySite> sites)
+        {
+            var result = new List<BodySite>();
+            if (sites == null) return result.ToArray();
+            foreach (var site in sites)
+                if (site != BodySite.Unknown && !result.Contains(site)) result.Add(site);
+            int count = result.Count;
+            for (int i = 0; i < count; i++)
+            {
+                var other = BodySites.Mirror(result[i]);
+                if (!result.Contains(other)) result.Add(other);
+            }
+            return result.ToArray();
+        }
+
         /// <summary>部位の列の名前（例：RightAnkle → right_ankle）。</summary>
         public static string SiteColumnName(BodySite site)
         {
@@ -246,7 +266,8 @@ namespace ExtraLimb.Experiment
             };
             try
             {
-                logger = new ExperimentLogger(RootDirectory, ExperimentLogger.SessionName(DateTime.Now, name), FrameColumns(trackerSites), info);
+                recordedSites = WithBothSides(trackerSites);
+                logger = new ExperimentLogger(RootDirectory, ExperimentLogger.SessionName(DateTime.Now, name), FrameColumns(recordedSites), info);
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
@@ -258,7 +279,7 @@ namespace ExtraLimb.Experiment
             startRealtime = Time.realtimeSinceStartupAsDouble;
             lastFlush = Time.unscaledTime;
             markerCount = 0;
-            trackerIds = new string[trackerSites?.Length ?? 0];
+            trackerIds = new string[recordedSites.Length];
             string folder = Path.GetFileName(logger.Directory);
             Write(new SessionEvent(SessionEventTypes.LogStart, "session", origin, "folder", "", folder, $"記録を始めました：{logger.Directory}"));
             WriteSnapshot(SessionEventTypes.LogStart);
@@ -374,14 +395,15 @@ namespace ExtraLimb.Experiment
         // frames.csv の部位の列に入れるトラッカーが変わったら、イベントに残す（ログ再生でどのトラッカーかを知るため）
         void UpdateTrackerMap()
         {
-            if (registry == null || trackerSites == null) return;
-            for (int i = 0; i < trackerSites.Length && i < trackerIds.Length; i++)
+            if (registry == null) return;
+            for (int i = 0; i < recordedSites.Length && i < trackerIds.Length; i++)
             {
-                string id = SourceSelector.SelectInput(registry, "", trackerSites[i]);
+                var site = recordedSites[i];
+                string id = SourceSelector.SelectInput(registry, "", site);
                 if (id == trackerIds[i]) continue;
                 string space = id != null && registry.TryGet(id, out var source) ? source.Space.ToString() : "";
-                Write(new SessionEvent(SessionEventTypes.TrackerMap, SiteColumnName(trackerSites[i]), ChangeOrigins.System, trackerSites[i].ToString(),
-                    trackerIds[i], id, id != null ? $"{BodySiteNames.Japanese(trackerSites[i])}の列：{id}（{space}）" : $"{BodySiteNames.Japanese(trackerSites[i])}の列：なし"));
+                Write(new SessionEvent(SessionEventTypes.TrackerMap, SiteColumnName(site), ChangeOrigins.System, site.ToString(),
+                    trackerIds[i], id, id != null ? $"{BodySiteNames.Japanese(site)}の列：{id}（{space}）" : $"{BodySiteNames.Japanese(site)}の列：なし"));
                 trackerIds[i] = id;
             }
         }
