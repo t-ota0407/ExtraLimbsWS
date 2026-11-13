@@ -74,12 +74,12 @@
     margin-left: 28px;
 }
 
+/* 角を丸めた箱では中身を切り取らない（下の「入力欄」の注を参照）。中の線は幅が 100% を超えないので切り取りは要らない */
 .el-banner__progress {
     height: 3px;
     margin: 6px 0 10px 0;
     background-color: rgba(255, 255, 255, 0.09);
     border-radius: 2px;
-    overflow: hidden;
 }
 
 .el-banner__progress-fill {
@@ -521,28 +521,48 @@
     padding: 0;
 }
 
-/* ---- 入力欄 ---- */
+/* ---- 入力欄 ----
+ * 角丸・背景・枠は外側（TextField）に付け、中の入力（字をはみ出させないように切り取る箱）は角を付けない。
+ * 角を丸めた箱で中身を切り取ると、UI Toolkit はステンシルを使う。ステンシルのない描き先（HMD をつないで再生したときの
+ * Game ビューなど）では、切り取る形が白く塗られて字が見えなくなる（2026-11-13。身長・肩幅の欄が白い四角になった）。
+ */
 
 .el-field {
     width: 56px;
-    margin: 0 3px;
-}
-
-.el-field .unity-base-text-field__input,
-.el-field .unity-text-field__input {
     min-height: 30px;
-    padding: 0 8px;
+    margin: 0 3px;
+    padding: 0;
     background-color: var(--surface);
-    color: var(--text);
     border-width: 1px;
     border-color: var(--line-strong);
     border-radius: 6px;
-    -unity-text-align: middle-left;
+    overflow: visible;
 }
 
-.el-field:focus .unity-base-text-field__input,
-.el-field:focus .unity-text-field__input {
+.el-field:focus {
     border-color: var(--live);
+}
+
+.el-field .unity-base-text-field__input,
+.el-field .unity-text-field__input,
+.el-field:hover .unity-base-text-field__input,
+.el-field:focus .unity-base-text-field__input {
+    flex-grow: 1;
+    min-height: 28px;
+    margin: 0;
+    padding: 0 7px;
+    background-color: transparent;
+    color: var(--text);
+    border-width: 0;
+    border-radius: 0;
+    -unity-text-align: middle-left;
+    --unity-cursor-color: rgb(236, 234, 229);
+    --unity-selection-color: rgba(92, 194, 189, 0.45);
+}
+
+.el-field .unity-text-element {
+    --unity-cursor-color: rgb(236, 234, 229);
+    --unity-selection-color: rgba(92, 194, 189, 0.45);
 }
 
 .el-field .unity-base-text-field__input--placeholder,
