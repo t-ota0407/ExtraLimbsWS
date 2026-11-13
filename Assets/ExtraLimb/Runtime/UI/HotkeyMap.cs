@@ -13,7 +13,7 @@ namespace ExtraLimb.UI
     /// キーを押すと LimbSession・ExperimentRecorder などの公開のメソッドを呼び、変更の出どころを key:キー名 として記録に残す。
     /// 実験者パネルの文字の欄に入力している間は、ホットキーを無視する。
     /// G（予備の把持）は押している間だけ GraspRig.KeyPressed を立てる（GraspRig より前に動くよう、実行順を 10005 にしてある）。
-    /// 実験モードでは、条件で決まる設定を変えるキー（生やす位置・入力の部位・型・ゲイン・2本目・左右の選択）は効かない。
+    /// 実験モードでは、条件で決まる設定を変えるキー（生やす位置・入力の部位・型・ゲイン・2本目）は効かない（左右の選択は、設定を見る追加肢を選ぶだけなので効く）。
     /// デモモードでは、Enter で今の設定のまま練習（リーチング課題）を始める。
     /// </summary>
     [DefaultExecutionOrder(10005)]
@@ -154,8 +154,8 @@ namespace ExtraLimb.UI
             Bind("GainUp", Unlocked(_ => ChangeGain(0.5f)));
             Bind("GainDown", Unlocked(_ => ChangeGain(-0.5f)));
             Bind("ToggleTwoLimbs", Unlocked(_ => session?.SetTwoLimbs(!session.TwoLimbs)));
-            Bind("SelectRight", Unlocked(_ => session?.SelectSide(LimbSide.Right)));
-            Bind("SelectLeft", Unlocked(_ => session?.SelectSide(LimbSide.Left)));
+            Bind("SelectRight", _ => session?.SelectSide(LimbSide.Right));
+            Bind("SelectLeft", _ => session?.SelectSide(LimbSide.Left));
             Bind("ToggleRecording", origin =>
             {
                 if (recorder == null) return;

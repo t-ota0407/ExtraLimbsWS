@@ -133,6 +133,10 @@ namespace ExtraLimb.Tests.EditMode
             }
             Assert.That(plan.conditions.Where(c => c.inputSite == BodySite.RightKnee).All(c => c.mappingPresetId == "knee_shin"), Is.True);
             Assert.That(plan.conditions.Where(c => c.inputSite == BodySite.RightShoulder).All(c => c.mappingPresetId == "shoulder_translate"), Is.True);
+            // 追加肢は左右2本で、左右の同じ部位で動かすので、部位の名前に左右は付けない
+            Assert.That(plan.conditions.Where(c => c.inputSite == BodySite.RightKnee).All(c => c.inputSiteName == "膝"), Is.True);
+            Assert.That(plan.BlockOrderText.Contains("右"), Is.False, plan.BlockOrderText);
+            Assert.That(plan.blockSiteNames, Is.EquivalentTo(new[] { "足首", "膝", "肩", "肘" }));
         }
     }
 }

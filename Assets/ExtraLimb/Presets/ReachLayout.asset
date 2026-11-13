@@ -13,10 +13,10 @@ MonoBehaviour:
   m_Name: ReachLayout
   m_EditorClassIdentifier: ExtraLimb.Experiment::ExtraLimb.Experiment.TaskLayout
   forwardRatio: 0.17
-  upRatio: 0.09
-  rightRatio: 0.3
-  radiusRatio: 0.28
+  upRatio: 0.08
+  rightRatio: 0
+  radiusRatio: 0.26
   targetCount: 8
   targetRadius: 0.03
-  extraLimbProbeRadius: 0.015
+  extraLimbProbeRadius: 0.01
   handProbeRadius: 0.04

@@ -88,7 +88,7 @@ namespace ExtraLimb.UI
 
         // 参加者
         TextField participantField, rowField, heightField, shoulderField;
-        Label planLabel, designLabel, participantMessage, bodyMessage;
+        Label planLabel, designLabel, trackerPlanLabel, participantMessage, bodyMessage;
         Button createPlanButton;
         VisualElement idRow;
 
@@ -106,7 +106,8 @@ namespace ExtraLimb.UI
         Button startButton, abortButton, redoButton, prevButton, nextButton, practiceButton;
         readonly Label[] ratingLabels = new Label[3];
         readonly Button[,] ratingButtons = new Button[3, ConditionRating.Max];
-        Button recenterButton;
+        Button recenterButton, trackerSwapButton;
+        Label trackerSwapLabel;
         Foldout sequenceSection;
         VisualElement sequenceList;
         ConditionPlan listedPlan;
@@ -351,6 +352,7 @@ namespace ExtraLimb.UI
                 createPlanButton = Btn(idRow, "提示順を作成", CreatePlan);
                 participantMessage = Text("", "el-caution", section);
                 planLabel = Text("", "el-muted", section);
+                trackerPlanLabel = Text("", "el-muted", section);
                 designLabel = Text("", "el-muted", section);
             }
 
@@ -431,7 +433,7 @@ namespace ExtraLimb.UI
                     var label = new VisualElement();
                     label.AddToClassList("el-combo-label");
                     comboRow.Add(label);
-                    Text(first ? BodySiteNames.Japanese(site) : "", "el-combo-site", label);
+                    Text(first ? BodySiteNames.Kind(site) : "", "el-combo-site", label);
                     Text(MappingPresets.ShortName(preset), "el-combo-type", label);
                     for (int i = 0; i < points.Count; i++)
                     {
@@ -452,15 +454,17 @@ namespace ExtraLimb.UI
                     first = false;
                 }
             }
-            Text("「実験」の印は、実験モードでその入力部位に使う型です（部位ごとに1つ。押して選びます）", "el-muted", demoSection);
+            Text("2本のときは、右の追加肢を右の部位、左の追加肢を左の同じ部位で動かします（左は右の鏡写し）。「実験」の印は、実験モードでその入力部位に使う型です（部位ごとに1つ。押して選びます）", "el-muted", demoSection);
         }
 
-        // 一覧の組み合わせにする：生やす位置（左右とも）、設定している追加肢の入力の部位と型（ゲインは型の初期値）
+        // 一覧の組み合わせにする：生やす位置（左右とも）、右の追加肢の入力の部位と型（ゲインは型の初期値）。2本のときは左を右の鏡写しにする
         void ApplyCombo(int pointIndex, BodySite site, MappingPreset preset)
         {
+            session.SelectSide(LimbSide.Right);
             session.SelectAttachPoint(pointIndex);
             session.SelectInputSite(site);
             session.SelectMappingPreset(preset);
+            if (session.TwoLimbs) session.MirrorLeftFromRight();
         }
 
         void BuildRunnerSection(VisualElement parent)
@@ -483,6 +487,10 @@ namespace ExtraLimb.UI
             nextButton = Btn(move, Key("次へ", "PgDn"), () => runner.Next(), true);
             var extra = Row(section);
             practiceButton = Btn(extra, "練習（記録上は条件に数えない）", () => runner.StartPractice(), true);
+            // トラッカーの付け替え（後半のブロックの前に一度）
+            trackerSwapLabel = Text("", "el-caution", section);
+            trackerSwapButton = Btn(section, "付け替えた（トラッカーの割り当てを更新）", () => runner.SwapTrackers());
+            trackerSwapButton.AddToClassList("el-button--block");
 
             var ratingHeader = SubHeader(section, "口頭評価", "1〜7 キーで上から順に入力");
             for (int item = 0; item < ratingLabels.Length; item++)
@@ -524,14 +532,13 @@ namespace ExtraLimb.UI
         void BuildLimbSection(VisualElement parent)
         {
             limbSection = Section(parent, "追加肢", true);
-            limbLockNote = Text("実験モードでは、条件で決まる設定（生やす位置・入力の部位・型・反転・ゲイン）は変えられません。変えるときはデモモードへ", "el-muted", limbSection);
+            limbLockNote = Text("実験モードでは、条件で決まる設定（生やす位置・入力の部位・型・反転・ゲイン・2本目）は変えられません。変えるときはデモモードへ", "el-muted", limbSection);
 
             sideRow = Row(limbSection);
             var sides = Segmented(sideRow);
             rightButton = Btn(sides, Key("右", "→"), () => session.SelectSide(LimbSide.Right), true);
             leftButton = Btn(sides, Key("左", "←"), () => session.SelectSide(LimbSide.Left), true);
             twoLimbsButton = Btn(sideRow, "", () => session.SetTwoLimbs(!session.TwoLimbs));
-            lockables.Add(rightButton);
             lockables.Add(twoLimbsButton);
             if (!session.HasLeftLimb) Show(sideRow, false);
 
@@ -767,7 +774,7 @@ namespace ExtraLimb.UI
             var section = Section(parent, "ホットキー", false);
             hotkeyList = new VisualElement();
             section.Add(hotkeyList);
-            Text("実験モードでは、生やす位置・入力の部位・型・ゲイン・2本目・左右の選択のキーは効きません。デモモードの Enter は練習の開始です", "el-muted", section);
+            Text("実験モードでは、生やす位置・入力の部位・型・ゲイン・2本目のキーは効きません。デモモードの Enter は練習の開始です", "el-muted", section);
             Text("Unity エディタで使うときは、Game ビューの「Unity Shortcuts」をオフにしてください", "el-muted", section);
             FillHotkeys();
         }
@@ -1191,7 +1198,7 @@ namespace ExtraLimb.UI
             ShowText(demoMessage, runner.Message);
             if (!demoSection.value) return;
 
-            var channel = session.Selected;
+            var channel = session.Primary;
             var config = channel != null ? channel.Config : null;
             foreach (var (button, _, pointId, site, preset) in comboButtons)
             {
@@ -1217,6 +1224,21 @@ namespace ExtraLimb.UI
                     : "");
             }
             if (designLabel != null && runner.IsExperimentMode) SetText(designLabel, $"実験で使う型：{runner.DesignText()}（変えるときはデモモードで）");
+            if (trackerPlanLabel != null)
+            {
+                var first = runner.FirstTrackerSites;
+                string text = "";
+                if (runner.IsExperimentMode && runner.HasPlan && first.Count > 0)
+                {
+                    var names = new List<string>();
+                    for (int i = 0; i < first.Count; i += 2) names.Add(BodySiteNames.Kind(first[i]));
+                    var later = new List<string>();
+                    foreach (var (_, to) in runner.TrackerSwaps)
+                        if (BodySites.IsRight(to)) later.Add(BodySiteNames.Kind(to));
+                    text = $"トラッカー：最初は{string.Join("・", names)}（左右）に付け、3つ目のブロックの前に{string.Join("・", later)}へ付け替える";
+                }
+                ShowText(trackerPlanLabel, text);
+            }
             if (bodyMessage != null) ShowText(bodyMessage, session.BodyMessage);
         }
 
@@ -1262,7 +1284,12 @@ namespace ExtraLimb.UI
             if (phase == TrialPhase.Ready) primary = recentered || runner.IsPractice ? startButton : recenterButton;
             else if (!running && phase != TrialPhase.Rating && phase != TrialPhase.Finished && runner.HasPlan
                      && (spec == null || phase == TrialPhase.Done || phase == TrialPhase.Break) && runner.CurrentIndex + 1 < plan.Count) primary = nextButton;
-            foreach (var button in new[] { recenterButton, startButton, nextButton }) button.EnableInClassList(PrimaryClass, button == primary);
+            // トラッカーの付け替え（後半のブロックの前）。必要なら付け替えのボタンを先に塗る
+            bool swap = runner.NeedsTrackerSwap;
+            ShowText(trackerSwapLabel, swap ? $"トラッカーを付け替えてください：{runner.TrackerSwapText()}" : "");
+            Show(trackerSwapButton, swap);
+            if (swap && (primary == nextButton || primary == recenterButton || primary == startButton)) primary = trackerSwapButton;
+            foreach (var button in new[] { recenterButton, startButton, nextButton, trackerSwapButton }) button.EnableInClassList(PrimaryClass, button == primary);
             createPlanButton?.EnableInClassList(PrimaryClass, !runner.HasPlan);
 
             var rating = runner.Rating;
@@ -1364,7 +1391,7 @@ namespace ExtraLimb.UI
             {
                 rightButton.EnableInClassList(SelectedClass, channel.Side == LimbSide.Right);
                 leftButton.EnableInClassList(SelectedClass, channel.Side == LimbSide.Left);
-                leftButton.SetEnabled(session.TwoLimbs && !locked);
+                leftButton.SetEnabled(session.TwoLimbs);
                 SetText(twoLimbsButton, Key(session.TwoLimbs ? "2本目を隠す" : "2本目を出す", "T"));
             }
             limbSection.text = session.TwoLimbs ? $"追加肢（{channel.Label}を設定中）" : "追加肢";
@@ -1379,12 +1406,16 @@ namespace ExtraLimb.UI
             }
 
             // 入力の部位（トラッカーが見つからない部位は赤）
+            // 左の追加肢では左の同じ部位を出す
             var registry = session.Registry;
+            bool leftSide = channel.Side == LimbSide.Left;
             foreach (var (button, site) in siteButtons)
             {
-                bool available = registry != null && SourceSelector.SelectInput(registry, "", site) != null;
+                var actual = BodySites.OnSide(site, leftSide);
+                SetText(button, BodySiteNames.Japanese(actual));
+                bool available = registry != null && SourceSelector.SelectInput(registry, "", actual) != null;
                 button.EnableInClassList(MissingClass, !available);
-                button.EnableInClassList(SelectedClass, site == config.inputSite && string.IsNullOrEmpty(config.inputSourceId));
+                button.EnableInClassList(SelectedClass, actual == config.inputSite && string.IsNullOrEmpty(config.inputSourceId));
             }
             if (trackerListButton != null) SetText(trackerListButton, monitor.ListOpen ? "トラッカーの一覧を閉じる" : "トラッカーの一覧");
             ShowText(channelStatus, channel.IsInputValid ? "" : channel.StatusMessage);

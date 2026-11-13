@@ -5,7 +5,8 @@ namespace ExtraLimb.Core
 {
     /// <summary>
     /// マッピングの型（計画書の決定事項#21）。入力の部位ごとに研究側が決めておき、条件の中ではゲインだけを変える。
-    /// フェーズCでは、その部位の型（2〜3種）から選び直せる。部位を Unknown にした型は、どの部位でも使える。
+    /// 実験では入力部位ごとに1つを使い、デモモードではその部位の型（2〜3種）から選び直せる。部位を Unknown にした型は、どの部位でも使える。
+    /// 型は右の部位で作る。左の同じ部位（左の追加肢）にも使え、そのときは鏡に写す（AxisMapping.Mirrored）。
     /// 値は仮で、パイロット（Step 6-1）で入力の6つの値の動ける範囲を見ながら決める。
     /// </summary>
     [CreateAssetMenu(menuName = "ExtraLimb/Mapping Preset", fileName = "MappingPreset")]
@@ -45,11 +46,15 @@ namespace ExtraLimb.Core
             {
                 if (preset == null) continue;
                 if (preset.site == BodySite.Unknown) generic.Add(preset);
-                else if (preset.site == site) specific.Add(preset);
+                else if (preset.site == site || preset.site == BodySites.Mirror(site)) specific.Add(preset);
             }
             specific.AddRange(generic);
             return specific;
         }
+
+        /// <summary>部位で使うときの型の割り当て（左の部位なら、右の部位で作った型を鏡に写す）。</summary>
+        public static AxisMapping MappingFor(MappingPreset preset, BodySite site) =>
+            preset == null ? AxisMapping.Identity : BodySites.IsLeft(site) ? preset.mapping.Mirrored() : preset.mapping;
 
         /// <summary>型の短い名前（「膝：すねを振る」→「すねを振る」）。部位と並べて出すときに使う。</summary>
         public static string ShortName(MappingPreset preset)

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using ExtraLimb.Core;
 using ExtraLimb.Limb;
+using ExtraLimb.Tracking;
 using UnityEngine;
 
 namespace ExtraLimb.Experiment
@@ -63,7 +64,12 @@ namespace ExtraLimb.Experiment
     /// <para>
     /// モード（WorkshopMode、2026-11-12）：デモでは提示順を使わず、今の設定のままの練習（リーチング課題）だけを行う。
     /// 実験では、生やす位置 × 入力部位の12条件（入力部位ごとの型は ExperimentDesign で1つ）を提示順どおりに進める。
-    /// 実験モードに入ると記録を始め、2本目を隠して、読み込んである条件の設定に戻す。
+    /// 実験モードに入ると記録を始め、読み込んである条件の設定に戻す。
+    /// </para>
+    /// <para>
+    /// 追加肢は左右2本（2026-11-13）。条件の入力部位（右の部位で持つ）で右の追加肢を、左の同じ部位で左の追加肢を動かし、
+    /// 左の設定は右を鏡に写す（LimbSession.MirrorLeftFromRight）。トラッカーは4台で、前半2ブロックの部位（左右）に付けておき、
+    /// 3つ目のブロックの前の休憩で後半2ブロックの部位に付け替える（TrackerSwaps・SwapTrackers）。
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(10030)]
@@ -78,7 +84,7 @@ namespace ExtraLimb.Experiment
             "participant", "latin_row", "order", "code", "block", "block_site", "index_in_block",
             "attach_point", "input_site", "mapping", "gain", "matches_condition", "attempt", "status",
             "loaded_time", "start_time", "seg1_start", "seg1_end", "seg2_start", "seg2_end",
-            "seg1_hits", "seg2_hits", "rating_ease", "rating_body", "rating_fatigue", "recenter_requests", "note",
+            "seg1_hits", "seg2_hits", "rating_ease", "rating_body", "rating_fatigue", "recenter_requests", "note", "limbs",
         };
 
         [Tooltip("空なら同じ GameObject かシーンから探す")]
@@ -288,6 +294,8 @@ namespace ExtraLimb.Experiment
         {
             ResolveNotice();
             ResolveTask();
+            // 追加肢は左右2本（LimbSession.Start で追加肢ができた後）
+            if (session != null && session.HasLeftLimb) session.SetTwoLimbs(true);
         }
 
         void ResolveNotice()
@@ -340,7 +348,7 @@ namespace ExtraLimb.Experiment
             return true;
         }
 
-        // 実験モードに入ったとき：使うのは右の1本だけ。準備中の条件があれば、その設定に戻す（デモで変えたものを戻す）
+        // 実験モードに入ったとき：左右2本にする。準備中の条件があればその設定に、なければ左を右の鏡写しに戻す（デモで変えたものを戻す）
         void RestoreConditionSettings()
         {
             if (session == null) return;
@@ -349,8 +357,11 @@ namespace ExtraLimb.Experiment
                 ApplySpec(Current);
                 return;
             }
-            if (session.TwoLimbs) session.SetTwoLimbs(false);
-            session.SelectSide(LimbSide.Right);
+            if (session.HasLeftLimb)
+            {
+                session.SetTwoLimbs(true);
+                session.MirrorLeftFromRight();
+            }
         }
 
         /// <summary>実験モードで、条件で決まる設定を変えようとしたときに知らせる。</summary>
@@ -378,7 +389,7 @@ namespace ExtraLimb.Experiment
             if (old == preset) return false;
             Design.Set(site, preset.id);
             SaveDesign();
-            string siteName = BodySiteNames.Japanese(site);
+            string siteName = BodySiteNames.Kind(site);
             Report(SessionEventTypes.ExperimentMapping, "session", site.ToString(), old != null ? old.id : "", preset.id,
                 $"実験で{siteName}に使う型を「{MappingPresets.ShortName(preset)}」にしました");
             bool planDiffers = false;
@@ -451,7 +462,7 @@ namespace ExtraLimb.Experiment
             {
                 var options = new List<ConditionSequence.Option>();
                 var preset = Design.Resolve(presets, site);
-                if (preset != null) options.Add(new ConditionSequence.Option(preset.id, preset.displayName));
+                if (preset != null) options.Add(new ConditionSequence.Option(preset.id, MappingPresets.ShortName(preset)));
                 return options;
             }, row);
             if (newPlan.Count == 0)
@@ -496,7 +507,7 @@ namespace ExtraLimb.Experiment
             foreach (var site in session.InputSites)
             {
                 var preset = ExperimentMapping(site);
-                parts.Add($"{BodySiteNames.Japanese(site)}＝{(preset != null ? MappingPresets.ShortName(preset) : "なし")}");
+                parts.Add($"{BodySiteNames.Kind(site)}＝{(preset != null ? MappingPresets.ShortName(preset) : "なし")}");
             }
             return string.Join("、", parts);
         }
@@ -539,7 +550,6 @@ namespace ExtraLimb.Experiment
         void ApplySpec(ConditionSpec spec)
         {
             if (session == null || spec == null) return;
-            if (session.TwoLimbs) session.SetTwoLimbs(false);
             session.SelectSide(LimbSide.Right);
             var channel = session.Primary;
             if (channel == null) return;
@@ -559,15 +569,112 @@ namespace ExtraLimb.Experiment
                 Debug.LogWarning($"[ExtraLimb] 条件の進行：マッピングの型「{spec.mappingPresetId}」が見つかりません", this);
             }
             session.Apply(channel, next);
+            // 左の追加肢：右を鏡に写す（左の同じ部位で動かす）
+            if (session.HasLeftLimb)
+            {
+                session.SetTwoLimbs(true);
+                session.MirrorLeftFromRight();
+            }
         }
 
         bool Matches(ConditionSpec spec)
         {
             var channel = session != null ? session.Primary : null;
-            if (spec == null || channel == null || session.TwoLimbs) return false;
+            if (spec == null || channel == null) return false;
             var config = channel.Config;
-            return config.attachPointId == spec.attachPointId && config.inputSite == spec.inputSite
-                   && string.IsNullOrEmpty(config.inputSourceId) && config.mappingPresetId == spec.mappingPresetId;
+            bool right = config.attachPointId == spec.attachPointId && config.inputSite == spec.inputSite
+                         && string.IsNullOrEmpty(config.inputSourceId) && config.mappingPresetId == spec.mappingPresetId;
+            return right && (!session.HasLeftLimb || (session.TwoLimbs && session.LeftMirrorsRight()));
+        }
+
+        // ---- トラッカーの付け替え（4台を左右2部位ずつ） ----
+
+        /// <summary>ブロック b（0 始まり）の入力部位（右の部位）。提示順がなければ Unknown。</summary>
+        public BodySite BlockSite(int block)
+        {
+            if (plan == null) return BodySite.Unknown;
+            foreach (var condition in plan.conditions)
+                if (condition.block == block) return condition.inputSite;
+            return BodySite.Unknown;
+        }
+
+        /// <summary>最初に付けるトラッカーの部位（前半2ブロックの部位の左右）。</summary>
+        public IReadOnlyList<BodySite> FirstTrackerSites => TrackerSites(0, 1);
+
+        /// <summary>3つ目のブロックの前に付け替える組（前半の部位 → 後半の部位。左右それぞれ）。4ブロックでなければ空。</summary>
+        public IReadOnlyList<(BodySite from, BodySite to)> TrackerSwaps
+        {
+            get
+            {
+                var swaps = new List<(BodySite, BodySite)>();
+                if (plan == null || plan.BlockCount != 4) return swaps;
+                for (int i = 0; i < 2; i++)
+                {
+                    var from = BlockSite(i);
+                    var to = BlockSite(i + 2);
+                    swaps.Add((from, to));
+                    swaps.Add((BodySites.Mirror(from), BodySites.Mirror(to)));
+                }
+                return swaps;
+            }
+        }
+
+        List<BodySite> TrackerSites(int firstBlock, int secondBlock)
+        {
+            var sites = new List<BodySite>();
+            if (plan == null) return sites;
+            foreach (int block in new[] { firstBlock, secondBlock })
+            {
+                var site = BlockSite(block);
+                if (site == BodySite.Unknown) continue;
+                sites.Add(site);
+                sites.Add(BodySites.Mirror(site));
+            }
+            return sites;
+        }
+
+        /// <summary>
+        /// 今トラッカーを付け替える必要があるか：次に行う条件が後半のブロック（3つ目以降）で、その部位にまだトラッカーが割り当てられておらず、
+        /// 付け替え元の部位には割り当ててある。課題の途中は false。
+        /// </summary>
+        public bool NeedsTrackerSwap
+        {
+            get
+            {
+                if (!IsExperimentMode || plan == null || IsRunning || phase == TrialPhase.Rating) return false;
+                var bindings = TrackerBindingService.Find();
+                if (bindings == null) return false;
+                int upcoming = phase == TrialPhase.Ready ? currentIndex
+                    : currentIndex + 1 < plan.Count ? currentIndex + 1 : -1;
+                if (upcoming < 0 || plan.conditions[upcoming].block < 2) return false;
+                foreach (var (from, to) in TrackerSwaps)
+                    if (!bindings.HasAssigned(to) && bindings.HasAssigned(from)) return true;
+                return false;
+            }
+        }
+
+        /// <summary>トラッカーの割り当てを付け替える（前半の部位 → 後半の部位）。トラッカーは体の上で同じように付け替える。</summary>
+        public bool SwapTrackers()
+        {
+            var bindings = TrackerBindingService.Find();
+            if (bindings == null) return Fail("トラッカーの割り当てがありません（TrackerBindingService がシーンにありません）");
+            if (IsRunning) return Fail("課題の途中は付け替えられません");
+            var moved = new List<string>();
+            foreach (var (from, to) in TrackerSwaps)
+                if (bindings.MoveSite(from, to) != null) moved.Add($"{BodySiteNames.Japanese(from)}→{BodySiteNames.Japanese(to)}");
+            if (moved.Count == 0) return Fail("付け替えるトラッカーがありません");
+            string text = string.Join("、", moved);
+            Report(SessionEventTypes.TrackerSwap, "session", "trackers", "", text, $"トラッカーの割り当てを付け替えました：{text}");
+            Say($"トラッカーの割り当てを付け替えました：{text}");
+            return true;
+        }
+
+        /// <summary>付け替えの案内（左足首 → 左肩 など）。</summary>
+        public string TrackerSwapText()
+        {
+            var parts = new List<string>();
+            foreach (var (from, to) in TrackerSwaps) parts.Add($"{BodySiteNames.Japanese(from)} → {BodySiteNames.Japanese(to)}");
+            return string.Join("　", parts);
         }
 
         /// <summary>次の条件を読み込む（PageDown）。</summary>
@@ -875,7 +982,8 @@ namespace ExtraLimb.Experiment
             AddCount(hits[1]);
             for (int i = 0; i < rating.Count; i++) AddCount(rating[i] > 0 ? rating[i] : (int?)null);
             row.Add(recenterRequests)
-                .Add(spec != null && !matchesAtStart ? $"設定が条件と違う：{actual}" : "");
+                .Add(spec != null && !matchesAtStart ? $"設定が条件と違う：{actual}" : "")
+                .Add(session != null && session.TwoLimbs ? 2 : 1);
             recorder.WriteTableRow(ConditionsFileName, ConditionColumns, row);
         }
 

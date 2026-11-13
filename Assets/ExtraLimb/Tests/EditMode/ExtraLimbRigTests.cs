@@ -10,7 +10,7 @@ namespace ExtraLimb.Tests.EditMode
         GameObject root;
         Transform spine2, upperArm, forearm, hand;
 
-        ExtraLimbRig CreateRig(LimbSide side)
+        ExtraLimbRig CreateRig(LimbSide side, bool withFingerBones = false)
         {
             float s = side == LimbSide.Right ? 1f : -1f;
             string name = side == LimbSide.Right ? "Right" : "Left";
@@ -21,7 +21,17 @@ namespace ExtraLimb.Tests.EditMode
             forearm = Bone($"sub_{name}ForeArm", upperArm, new Vector3(s * 0.382f, 1.639f, -0.140f));
             hand = Bone($"sub_{name}Hand", forearm, new Vector3(s * 0.617f, 1.749f, -0.234f));
             var direction = (hand.position - forearm.position).normalized;
-            Bone($"sub_{name}HandMiddle4_end", hand, hand.position + direction * 0.18f);
+            if (withFingerBones)
+            {
+                // 実際のモデルと同じく、見た目の指先は HandMiddle4 の根元、HandMiddle4_end はその約4cm先
+                var middle3 = Bone($"sub_{name}HandMiddle3", hand, hand.position + direction * 0.11f);
+                var middle4 = Bone($"sub_{name}HandMiddle4", middle3, hand.position + direction * 0.14f);
+                Bone($"sub_{name}HandMiddle4_end", middle4, hand.position + direction * 0.18f);
+            }
+            else
+            {
+                Bone($"sub_{name}HandMiddle4_end", hand, hand.position + direction * 0.18f);
+            }
 
             var rig = root.AddComponent<ExtraLimbRig>();
             rig.Configure(root.transform, side);
@@ -168,6 +178,18 @@ namespace ExtraLimb.Tests.EditMode
 
             var forearmDirection = (hand.position - forearm.position).normalized;
             TestMath.AreClose(hand.position + forearmDirection * 0.18f, rig.ContactPoint, 1e-3f, "手の向きは前腕の延長");
+        }
+
+        [TestCase(LimbSide.Right)]
+        [TestCase(LimbSide.Left)]
+        public void ContactPoint_IsMiddle4Root_NotBoneEnd(LimbSide side)
+        {
+            var rig = CreateRig(side, withFingerBones: true);
+            rig.SolveLocal(rig.RestHandPosition);
+
+            var forearmDirection = (hand.position - forearm.position).normalized;
+            TestMath.AreClose(hand.position + forearmDirection * 0.14f, rig.ContactPoint, 1e-3f, "見た目の指先（HandMiddle4 の根元）");
+            TestMath.AreClose(forearmDirection, rig.ContactDirection, 1e-3f, "指の付け根から指先への向き");
         }
     }
 }

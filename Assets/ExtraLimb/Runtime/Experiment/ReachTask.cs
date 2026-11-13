@@ -200,22 +200,32 @@ namespace ExtraLimb.Experiment
         }
 
         /// <summary>
-        /// 右の追加肢が届くターゲットの数（今の生やす位置で。届く距離＝腕の長さの95%＋手首から指先まで＋ターゲットの半径）。
+        /// 追加肢（動かしているもののどれか）が届くターゲットの数（今の生やす位置で。届く距離＝腕の長さの95%＋手首から指先まで＋ターゲットの半径）。
         /// 円を置いていないか、追加肢の準備ができていなければ -1。unreachable に届かないターゲットの名前を入れる。
         /// </summary>
         public int CountReachable(out string unreachable)
         {
             unreachable = "";
-            var limb = session != null && session.Primary != null ? session.Primary.Limb : null;
-            if (!placed || layout == null || limb == null || !limb.IsReady || limb.Reach <= 1e-3f) return -1;
-            float tip = (limb.ContactPoint - limb.Hand.position).magnitude;
-            float reach = limb.Reach * 0.95f + tip + layout.targetRadius;
-            var origin = limb.Frame.position;
+            if (!placed || layout == null || session == null) return -1;
+            var limbs = new List<ExtraLimbRig>();
+            foreach (var channel in session.Channels)
+            {
+                var limb = channel.Limb;
+                if (channel.Active && limb != null && limb.IsReady && limb.Reach > 1e-3f) limbs.Add(limb);
+            }
+            if (limbs.Count == 0) return -1;
             int count = 0;
             var names = new List<string>();
             for (int k = 0; k < ring.Count; k++)
             {
-                if (Vector3.Distance(origin, ring.targets[k]) <= reach) count++;
+                bool reachable = false;
+                foreach (var limb in limbs)
+                {
+                    float tip = (limb.ContactPoint - limb.Hand.position).magnitude;
+                    float reach = limb.Reach * 0.95f + tip + layout.targetRadius;
+                    if (Vector3.Distance(limb.Frame.position, ring.targets[k]) <= reach) reachable = true;
+                }
+                if (reachable) count++;
                 else names.Add(ReachRing.PositionName(k, ring.Count));
             }
             unreachable = string.Join("・", names);
@@ -305,6 +315,13 @@ namespace ExtraLimb.Experiment
             UpdateColors();
         }
 
+        /// <summary>
+        /// 追加肢の効果器の球の中心：見た目の指先から、指の付け根の向きへ半径だけ戻った点。球の先端が指先にそろうので、
+        /// 指先がターゲットの表面に触れたときに触れたとする（2026-11-13。それまでは指先より約4cm先の骨の端を中心にしていた）。
+        /// </summary>
+        public static Vector3 ExtraLimbProbeCenter(Vector3 fingertip, Vector3 fingerDirection, float radius) =>
+            fingertip - fingerDirection.normalized * radius;
+
         // 効果器：追加肢の指先（右を先に）、本来の手の手のひらの点（手首と中指の付け根の間）
         void CollectProbes()
         {
@@ -316,7 +333,8 @@ namespace ExtraLimb.Experiment
                     var limb = channel.Limb;
                     if (!channel.Active || limb == null || !limb.IsReady || !limb.Visible) continue;
                     var kind = limb.Side == LimbSide.Left ? EffectorKind.ExtraLeft : EffectorKind.ExtraRight;
-                    probes.Add(new EffectorProbe(kind, true, limb.ContactPoint, layout.extraLimbProbeRadius));
+                    probes.Add(new EffectorProbe(kind, true, ExtraLimbProbeCenter(limb.ContactPoint, limb.ContactDirection, layout.extraLimbProbeRadius),
+                        layout.extraLimbProbeRadius));
                 }
             }
             HookBody();

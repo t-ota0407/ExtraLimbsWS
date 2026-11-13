@@ -179,11 +179,11 @@ namespace ExtraLimb.Tests.EditMode
         {
             var spec = new ConditionSpec
             {
-                block = 1, indexInBlock = 2, attachPointName = "脇腹", inputSiteName = "右膝", mappingName = "並進",
+                block = 1, indexInBlock = 2, attachPointName = "脇腹", inputSiteName = "膝", mappingName = "並進",
             };
 
             Assert.That(spec.Code, Is.EqualTo("2-3"));
-            Assert.That(spec.Label, Is.EqualTo("脇腹｜右膝｜並進"));
+            Assert.That(spec.Label, Is.EqualTo("脇腹｜膝｜並進"));
         }
 
         // ---- 課題の時間 ----

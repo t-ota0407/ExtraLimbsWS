@@ -18,10 +18,13 @@ namespace ExtraLimb.Tracking
         [SerializeField] TrackerRegistryHost registryHost;
         [SerializeField] string fileName = "tracker_bindings.json";
 
-        /// <summary>モニタで部位を切り替えるときの順番。</summary>
+        /// <summary>モニタで部位を切り替えるときの順番（追加肢は左右2本なので、左右の同じ部位を並べる）。</summary>
         static readonly BodySite[] CycleOrder =
         {
-            BodySite.Unknown, BodySite.RightAnkle, BodySite.RightKnee, BodySite.RightShoulder, BodySite.RightElbow, BodySite.Waist,
+            BodySite.Unknown,
+            BodySite.RightAnkle, BodySite.LeftAnkle, BodySite.RightKnee, BodySite.LeftKnee,
+            BodySite.RightShoulder, BodySite.LeftShoulder, BodySite.RightElbow, BodySite.LeftElbow,
+            BodySite.Waist,
         };
 
         TrackerRegistry registry;
@@ -97,7 +100,33 @@ namespace ExtraLimb.Tracking
         }
 
         /// <summary>
-        /// 部位を順番に切り替える（未割り当て → 右足首 → 右膝 → 右肩 → 右肘 → 腰 → 未割り当て）。
+        /// トラッカーの付け替え：from の部位に割り当ててあるトラッカーを、to の部位に割り当て直す（トラッカーを体の上で付け替えたとき）。
+        /// from にトラッカーがなければ何もせず null、割り当て直したらそのトラッカーの ID を返す。
+        /// </summary>
+        public string MoveSite(BodySite from, BodySite to)
+        {
+            string sourceId = FindAssignedSource(from);
+            if (sourceId == null)
+            {
+                foreach (var binding in Profile.bindings)
+                    if (binding.site == from) sourceId = binding.serial;
+            }
+            if (sourceId == null || from == to) return null;
+            Assign(sourceId, to);
+            return sourceId;
+        }
+
+        /// <summary>部位にトラッカーが割り当ててあるか（今つながっていないトラッカーの保存した割り当ても含む）。</summary>
+        public bool HasAssigned(BodySite site)
+        {
+            if (FindAssignedSource(site) != null) return true;
+            foreach (var binding in Profile.bindings)
+                if (binding.site == site) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 部位を順番に切り替える（未割り当て → 右足首 → 左足首 → 右膝 → 左膝 → 右肩 → 左肩 → 右肘 → 左肘 → 腰 → 未割り当て）。
         /// ほかのトラッカーが使っている部位は飛ばすので、途中で通っても前のトラッカーの割り当ては消えない。
         /// </summary>
         public void CycleSite(string sourceId)

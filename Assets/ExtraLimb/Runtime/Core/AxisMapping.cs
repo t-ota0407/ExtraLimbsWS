@@ -71,6 +71,13 @@ namespace ExtraLimb.Core
 
         public static bool IsRotation(this InputChannel channel) => channel >= InputChannel.TiltForward;
 
+        /// <summary>
+        /// 体を左右に鏡に写したとき（右と左を入れ替える）に、値の向きが逆になるか。
+        /// 右へ動かす・右へ傾ける・右へひねるは逆になり、上・前へ動かす・前へ傾けるは変わらない。
+        /// </summary>
+        public static bool FlipsWhenMirrored(this InputChannel channel) =>
+            channel == InputChannel.MoveRight || channel == InputChannel.TiltRight || channel == InputChannel.TwistRight;
+
         /// <summary>動かし方の言葉。sign が負なら逆向きの言葉（例：右へ動かす → 左へ動かす）。</summary>
         public static string Describe(InputChannel channel, float sign = 1f)
         {
@@ -275,6 +282,26 @@ namespace ExtraLimb.Core
             var assignment = copy[axis];
             assignment.scale = -assignment.scale;
             copy[axis] = assignment;
+            return copy;
+        }
+
+        /// <summary>
+        /// 左右を鏡に写した型（右の部位の型を、左の同じ部位で左の追加肢を動かすときに使う）。
+        /// 手先の右（x）と、入力の「右へ動かす・右へ傾ける・右へひねる」は鏡に写すと向きが逆になる。
+        /// 片方だけが逆になる組み合わせ（例：手先の右 ← 前へ傾ける）は倍率の符号を変え、両方とも逆・両方とも変わらない組み合わせはそのまま。
+        /// そのため「動かした向き＝手先の向き」の型（並進そのまま、上体のひねり→右 など）は、鏡に写しても同じ型になる。
+        /// </summary>
+        public AxisMapping Mirrored()
+        {
+            var copy = this;
+            for (int axis = 0; axis < 3; axis++)
+            {
+                var assignment = copy[axis];
+                if (!assignment.IsUsed) continue;
+                bool handFlips = axis == 0;
+                if (handFlips != assignment.channel.FlipsWhenMirrored()) assignment.scale = -assignment.scale;
+                copy[axis] = assignment;
+            }
             return copy;
         }
 

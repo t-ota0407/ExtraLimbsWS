@@ -38,7 +38,7 @@ namespace ExtraLimb.Experiment
         [Header("2本目（左の追加肢）")]
         [Tooltip("左の追加肢。空ならシーンから探す")]
         [SerializeField] ExtraLimbRig leftLimb;
-        [Tooltip("左の追加肢も動かすか。デモモードのパネルで切り替えられる（WS の実験では使わない）")]
+        [Tooltip("左の追加肢も動かすか。左は右の設定を鏡に写したもの（左の同じ部位で動かす）。実験モードでは常に2本（ConditionRunner が出す）")]
         [SerializeField] bool twoLimbs;
         [SerializeField] LimbRuntimeConfig leftConfig = new LimbRuntimeConfig
         {
@@ -267,10 +267,8 @@ namespace ExtraLimb.Experiment
             right.MountChanged += () => MountChanged?.Invoke();
             if (leftLimb != null && leftLimb.IsReady)
             {
-                // 生やす位置は左右対称にそろえる
-                var leftStart = leftConfig.Clone();
-                leftStart.attachPointId = right.Config.attachPointId;
-                left = AddChannel(leftLimb, leftStart);
+                // 左は右を鏡に写す（生やす位置は左右対称、入力は左の同じ部位、型は鏡に写したもの）
+                left = AddChannel(leftLimb, MirrorForLeft(right.Config, leftConfig));
                 left.SetActive(false);
                 if (twoLimbs) SetTwoLimbs(true);
             }
@@ -321,7 +319,10 @@ namespace ExtraLimb.Experiment
                 if (channels[i].Side == side) Select(i);
         }
 
-        /// <summary>左の追加肢を動かすか（デモモードで使う。WS の実験では使わない）。止めると隠し、選択を右に戻す。</summary>
+        /// <summary>
+        /// 左の追加肢を動かすか。出すときは右の設定を鏡に写す（MirrorLeftFromRight）。止めると隠し、選択を右に戻す。
+        /// 実験（2026-11-13 から左右2本）では常に出す。
+        /// </summary>
         public void SetTwoLimbs(bool on)
         {
             if (left == null || TwoLimbs == on) return;
@@ -329,10 +330,7 @@ namespace ExtraLimb.Experiment
             Raise(SessionEventTypes.TwoLimbs, left.Subject, "active", Bool(!on), Bool(on), on ? "左の追加肢を出しました" : "左の追加肢を隠しました");
             if (on)
             {
-                // 生やす位置を右にそろえる
-                var next = left.Config.Clone();
-                next.attachPointId = Primary.Config.attachPointId;
-                Apply(left, next);
+                MirrorLeftFromRight();
             }
             else if (Selected == left)
             {
@@ -340,6 +338,42 @@ namespace ExtraLimb.Experiment
             }
             Revise(SessionEventTypes.TwoLimbs);
             Debug.Log($"[ExtraLimb] 左の追加肢を{(on ? "動かします" : "隠します")}");
+        }
+
+        /// <summary>
+        /// 左の追加肢の設定を、右の設定を鏡に写したものにする（生やす位置は同じ、入力は左の同じ部位、型は鏡に写す、ゲインは同じ）。
+        /// 左の把持トリガーなど、左だけの設定は残す。
+        /// </summary>
+        public void MirrorLeftFromRight()
+        {
+            if (left == null || Primary == null || left == Primary) return;
+            Apply(left, MirrorForLeft(Primary.Config, left.Config));
+        }
+
+        /// <summary>右の設定 right を鏡に写した、左の追加肢の設定（leftCurrent の把持トリガーとフィルタは残す）。</summary>
+        public static LimbRuntimeConfig MirrorForLeft(LimbRuntimeConfig right, LimbRuntimeConfig leftCurrent)
+        {
+            var next = right.Clone();
+            next.inputSite = BodySites.OnSide(right.inputSite, left: true);
+            next.inputSourceId = "";
+            next.axisMapping = right.axisMapping.Mirrored();
+            if (leftCurrent != null)
+            {
+                next.grasp = leftCurrent.Clone().grasp;
+                next.filter = leftCurrent.Clone().filter;
+            }
+            return next;
+        }
+
+        /// <summary>左の追加肢が、右の設定を鏡に写したものになっているか。</summary>
+        public bool LeftMirrorsRight()
+        {
+            if (left == null || Primary == null) return false;
+            var expected = MirrorForLeft(Primary.Config, left.Config);
+            var config = left.Config;
+            return config.attachPointId == expected.attachPointId && config.inputSite == expected.inputSite
+                   && string.IsNullOrEmpty(config.inputSourceId) && config.mappingPresetId == expected.mappingPresetId
+                   && Mathf.Approximately(config.positionGain, expected.positionGain);
         }
 
         // ---- 設定 ----
@@ -389,6 +423,8 @@ namespace ExtraLimb.Experiment
         public void SelectInputSite(BodySite site)
         {
             var channel = Selected;
+            // 左の追加肢は左の同じ部位で動かす（一覧は右の部位で持っている）
+            if (channel != null) site = BodySites.OnSide(site, channel.Side == LimbSide.Left);
             if (channel == null || (site == channel.Config.inputSite && string.IsNullOrEmpty(channel.Config.inputSourceId))) return;
             var next = channel.Config.Clone();
             next.inputSite = site;
@@ -432,7 +468,7 @@ namespace ExtraLimb.Experiment
         static void SetPreset(LimbRuntimeConfig target, MappingPreset preset)
         {
             target.mappingPresetId = preset.id;
-            target.axisMapping = preset.mapping;
+            target.axisMapping = MappingPresets.MappingFor(preset, target.inputSite);
             target.positionGain = preset.gain;
         }
 

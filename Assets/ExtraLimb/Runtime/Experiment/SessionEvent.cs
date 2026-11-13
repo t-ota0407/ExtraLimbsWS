@@ -110,6 +110,9 @@ namespace ExtraLimb.Experiment
         /// <summary>実験モードで入力部位に使うマッピングの型を選んだ（key＝部位、old・new＝型のID）。</summary>
         public const string ExperimentMapping = "experiment_mapping";
 
+        /// <summary>トラッカーの割り当てを付け替えた（new＝付け替えた部位の組。4台を左右2部位ずつ使うので、後半のブロックの前に付け替える）。</summary>
+        public const string TrackerSwap = "tracker_swap";
+
         /// <summary>条件を読み込んだ（key＝提示順の番号（1 始まり）、new＝条件の中身）。</summary>
         public const string Condition = "condition";
 

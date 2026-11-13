@@ -44,7 +44,7 @@ namespace ExtraLimb.Limb
         [SerializeField] Transform upperArm;
         [SerializeField] Transform forearm;
         [SerializeField] Transform hand;
-        [Tooltip("ボタンなどに触れる点。空なら中指の先（〜HandMiddle4_end）、それもなければ手首から前腕の延長に8cm")]
+        [Tooltip("ボタンなどに触れる点。空なら中指の先（〜HandMiddle4。この骨の根元が見た目の指先）、なければ〜HandMiddle4_end、それもなければ手首から前腕の延長に8cm")]
         [SerializeField] Transform contactTip;
 
         [Header("根元の座標（x は外向きが正、m）")]
@@ -67,6 +67,7 @@ namespace ExtraLimb.Limb
         Transform frameSource;
         Quaternion frameOffset = Quaternion.identity;
         Vector3 tipLocal;
+        Vector3 tipDirectionLocal = Vector3.forward;
         Transform visibilityBone;
         Vector3 visibilityBoneScale = Vector3.one;
         int lastSolveFrame = -1;
@@ -126,8 +127,11 @@ namespace ExtraLimb.Limb
             }
         }
 
-        /// <summary>触れる点（ワールド座標）。</summary>
+        /// <summary>触れる点（ワールド座標）。見た目の中指の先。</summary>
         public Vector3 ContactPoint => initialized ? hand.TransformPoint(tipLocal) : transform.position;
+
+        /// <summary>指先の向き（ワールド座標の単位ベクトル。指の付け根から指先へ）。</summary>
+        public Vector3 ContactDirection => initialized ? hand.TransformDirection(tipDirectionLocal).normalized : transform.forward;
 
         /// <summary>「外向きが正」の x を、この肢の左右に合わせる。</summary>
         public Vector3 Mirror(Vector3 v) => side == LimbSide.Left ? new Vector3(-v.x, v.y, v.z) : v;
@@ -230,6 +234,8 @@ namespace ExtraLimb.Limb
             if (upperArm == null) upperArm = FindBone(bonePrefix + sideName + "Arm");
             if (forearm == null) forearm = FindBone(bonePrefix + sideName + "ForeArm");
             if (hand == null) hand = FindBone(bonePrefix + sideName + "Hand");
+            // 見た目の指先は HandMiddle4 の根元にある（その先の HandMiddle4_end は、見た目の指先より約4cm先。2026-11-13 にメッシュで確かめた）
+            if (contactTip == null) contactTip = FindBone(bonePrefix + sideName + "HandMiddle4");
             if (contactTip == null) contactTip = FindBone(bonePrefix + sideName + "HandMiddle4_end");
             if (upperArm == null || forearm == null || hand == null)
             {
@@ -243,11 +249,14 @@ namespace ExtraLimb.Limb
             if (contactTip != null)
             {
                 tipLocal = hand.InverseTransformPoint(contactTip.position);
+                var from = contactTip.parent != null && contactTip.parent != hand ? contactTip.parent.position : hand.position;
+                tipDirectionLocal = hand.InverseTransformDirection((contactTip.position - from).normalized);
             }
             else
             {
                 var direction = (hand.position - forearm.position).normalized;
                 tipLocal = hand.InverseTransformPoint(hand.position + direction * FallbackTipDistance);
+                tipDirectionLocal = hand.InverseTransformDirection(direction);
             }
 
             solver = new FinalIKLimbSolver();

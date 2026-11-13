@@ -62,13 +62,13 @@ namespace ExtraLimb.Experiment
         public int Count => conditions?.Length ?? 0;
         public int BlockCount => blockSites?.Length ?? 0;
 
-        /// <summary>例：右肩 → 右肘 → 右足首 → 右膝。</summary>
+        /// <summary>例：肩 → 肘 → 足首 → 膝（追加肢は左右2本で、左右の同じ部位で動かすので左右は付けない）。</summary>
         public string BlockOrderText
         {
             get
             {
                 var names = new List<string>();
-                foreach (var site in blockSites ?? Array.Empty<BodySite>()) names.Add(BodySiteNames.Japanese(site));
+                foreach (var site in blockSites ?? Array.Empty<BodySite>()) names.Add(BodySiteNames.Kind(site));
                 return string.Join(" → ", names);
             }
         }
@@ -184,7 +184,7 @@ namespace ExtraLimb.Experiment
             {
                 var site = usableSites[blockOrder[block]];
                 plan.blockSites[block] = site;
-                plan.blockSiteNames[block] = BodySiteNames.Japanese(site);
+                plan.blockSiteNames[block] = BodySiteNames.Kind(site);
                 var cells = new List<ConditionSpec>();
                 if (attachPoints != null)
                     foreach (var attach in attachPoints)
@@ -195,7 +195,7 @@ namespace ExtraLimb.Experiment
                             attachPointId = attach.id,
                             attachPointName = attach.name,
                             inputSite = site,
-                            inputSiteName = BodySiteNames.Japanese(site),
+                            inputSiteName = BodySiteNames.Kind(site),
                             mappingPresetId = mapping.id,
                             mappingName = mapping.name,
                         });
