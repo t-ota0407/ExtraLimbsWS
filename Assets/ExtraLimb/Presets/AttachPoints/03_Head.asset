@@ -16,7 +16,7 @@ MonoBehaviour:
   displayName: "\u982D\u90E8"
   parentBone: 10
   jointOffset: {x: 0.079955384, y: 0.09924626, z: -0.0065925284}
-  frameBone: 54
+  frameBone: 10
   restHandPosition: {x: 0.12, y: -0.18, z: 0.3}
   bendHint: {x: 0.3, y: 0.1, z: -0.05}
   note: "Blender \u306E ExtraLimbsAvatar_Head\uFF082026-10-29 \u4FEE\u6B63\u7248\uFF09\u306E\u4E0A\u8155\u306E\u4ED8\u3051\u6839\u3092

@@ -24,7 +24,8 @@ namespace ExtraLimb.Body
         public Vector3 jointOffset = new Vector3(0.149f, 0.183f, -0.003f);
 
         [Header("手先のターゲットを表す座標")]
-        [Tooltip("根元の座標の向きを合わせる骨。どの位置でも同じにすると、入力の向きと手先の動く向きの関係がそろう")]
+        [Tooltip("根元の座標の向きを合わせる骨。付け根と同じ骨にすると、追加肢はその部位について動き、回る（トラッカーを動かさなくても、頭を回せば頭部の追加肢も回る）。" +
+                 "2026-11-13から3か所とも付け根の骨にした（それまでは3か所とも胸で、頭部の追加肢は頭を回しても胸の向きのままだった）")]
         public HumanBodyBones frameBone = HumanBodyBones.UpperChest;
 
         [Tooltip("手首の既定位置（制御則の基準位置 p_b）。上腕の付け根から、体の向きで（x は外向きが正、m）")]

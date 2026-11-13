@@ -187,6 +187,33 @@ namespace ExtraLimb.Tests.EditMode
             Assert.That(rig.UpperArm.lossyScale.x, Is.EqualTo(1f).Within(1e-3f));
         }
 
+        // 2026-11-13：追加肢は生やした部位について動く。部位の骨を動かす・回すと、トラッカーを動かしていなくても
+        // 手先（の基準位置）と根元の座標の向きが、その骨から見て同じところに留まる
+        [TestCase("head", HumanBodyBones.Head, false)]
+        [TestCase("head", HumanBodyBones.Head, true)]
+        [TestCase("shoulder_top", HumanBodyBones.UpperChest, true)]
+        [TestCase("flank", HumanBodyBones.UpperChest, true)]
+        public void LimbFrame_FollowsAttachSiteBone(string id, HumanBodyBones bone, bool rotate)
+        {
+            var (rig, mount) = CreateLimb(LimbSide.Right, id);
+            mount.Step(0.01f);
+            var site = body.Animator.GetBoneTransform(bone);
+            var restLocal = site.InverseTransformPoint(rig.FrameToWorld(rig.RestHandPosition));
+            var frameLocal = Quaternion.Inverse(site.rotation) * rig.Frame.rotation;
+            var restWorldBefore = rig.FrameToWorld(rig.RestHandPosition);
+
+            site.position += new Vector3(0.04f, -0.03f, 0.05f);
+            if (rotate) site.rotation = Quaternion.AngleAxis(35f, Vector3.up) * Quaternion.AngleAxis(20f, Vector3.right) * site.rotation;
+            mount.Step(0.01f);
+
+            var restWorld = rig.FrameToWorld(rig.RestHandPosition);
+            Assert.That(Vector3.Distance(restWorld, restWorldBefore), Is.GreaterThan(0.04f), "部位を動かすと手先の基準位置も動く");
+            float error = Vector3.Distance(site.InverseTransformPoint(restWorld), restLocal);
+            Assert.That(error, Is.LessThan(1e-3f), $"部位から見た手先の基準位置のずれ {error * 100f:F1} cm");
+            float angle = Quaternion.Angle(frameLocal, Quaternion.Inverse(site.rotation) * rig.Frame.rotation);
+            Assert.That(angle, Is.LessThan(0.5f), $"部位から見た根元の座標の向きのずれ {angle:F1}°");
+        }
+
         [Test]
         public void BodyDimensions_ScaleAvatarAndAttachPoints()
         {
