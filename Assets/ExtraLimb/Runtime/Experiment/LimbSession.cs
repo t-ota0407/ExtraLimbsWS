@@ -38,7 +38,7 @@ namespace ExtraLimb.Experiment
         [Header("2本目（左の追加肢）")]
         [Tooltip("左の追加肢。空ならシーンから探す")]
         [SerializeField] ExtraLimbRig leftLimb;
-        [Tooltip("左の追加肢も動かすか（フェーズC・D）。パネルで切り替えられる")]
+        [Tooltip("左の追加肢も動かすか。デモモードのパネルで切り替えられる（WS の実験では使わない）")]
         [SerializeField] bool twoLimbs;
         [SerializeField] LimbRuntimeConfig leftConfig = new LimbRuntimeConfig
         {
@@ -321,7 +321,7 @@ namespace ExtraLimb.Experiment
                 if (channels[i].Side == side) Select(i);
         }
 
-        /// <summary>左の追加肢を動かすか（フェーズC・D）。止めると隠し、選択を右に戻す。</summary>
+        /// <summary>左の追加肢を動かすか（デモモードで使う。WS の実験では使わない）。止めると隠し、選択を右に戻す。</summary>
         public void SetTwoLimbs(bool on)
         {
             if (left == null || TwoLimbs == on) return;

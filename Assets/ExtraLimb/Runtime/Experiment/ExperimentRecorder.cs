@@ -211,6 +211,13 @@ namespace ExtraLimb.Experiment
             }
         }
 
+        /// <summary>再生を始めたら記録を始めるか。ほかの部品の Awake・OnEnable で変えれば、その再生から効く（ConditionRunner がモードに合わせて決める）。</summary>
+        public bool AutoStart
+        {
+            get => autoStart;
+            set => autoStart = value;
+        }
+
         void Start()
         {
             if (autoStart) StartRecording(ChangeOrigins.System);

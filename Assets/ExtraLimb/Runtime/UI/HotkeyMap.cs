@@ -13,6 +13,8 @@ namespace ExtraLimb.UI
     /// キーを押すと LimbSession・ExperimentRecorder などの公開のメソッドを呼び、変更の出どころを key:キー名 として記録に残す。
     /// 実験者パネルの文字の欄に入力している間は、ホットキーを無視する。
     /// G（予備の把持）は押している間だけ GraspRig.KeyPressed を立てる（GraspRig より前に動くよう、実行順を 10005 にしてある）。
+    /// 実験モードでは、条件で決まる設定を変えるキー（生やす位置・入力の部位・型・ゲイン・2本目・左右の選択）は効かない。
+    /// デモモードでは、Enter で今の設定のまま練習（リーチング課題）を始める。
     /// </summary>
     [DefaultExecutionOrder(10005)]
     public class HotkeyMap : MonoBehaviour
@@ -138,22 +140,22 @@ namespace ExtraLimb.UI
             for (int i = 0; i < 3; i++)
             {
                 int index = i;
-                Bind($"AttachPoint{i + 1}", _ => session?.SelectAttachPoint(index));
+                Bind($"AttachPoint{i + 1}", Unlocked(_ => session?.SelectAttachPoint(index)));
             }
             for (int i = 0; i < 4; i++)
             {
                 int index = i;
-                Bind($"InputSite{i + 1}", _ =>
+                Bind($"InputSite{i + 1}", Unlocked(_ =>
                 {
                     if (session != null && index < session.InputSites.Count) session.SelectInputSite(session.InputSites[index]);
-                });
+                }));
             }
-            Bind("NextMapping", _ => session?.CycleMappingPreset());
-            Bind("GainUp", _ => ChangeGain(0.5f));
-            Bind("GainDown", _ => ChangeGain(-0.5f));
-            Bind("ToggleTwoLimbs", _ => session?.SetTwoLimbs(!session.TwoLimbs));
-            Bind("SelectRight", _ => session?.SelectSide(LimbSide.Right));
-            Bind("SelectLeft", _ => session?.SelectSide(LimbSide.Left));
+            Bind("NextMapping", Unlocked(_ => session?.CycleMappingPreset()));
+            Bind("GainUp", Unlocked(_ => ChangeGain(0.5f)));
+            Bind("GainDown", Unlocked(_ => ChangeGain(-0.5f)));
+            Bind("ToggleTwoLimbs", Unlocked(_ => session?.SetTwoLimbs(!session.TwoLimbs)));
+            Bind("SelectRight", Unlocked(_ => session?.SelectSide(LimbSide.Right)));
+            Bind("SelectLeft", Unlocked(_ => session?.SelectSide(LimbSide.Left)));
             Bind("ToggleRecording", origin =>
             {
                 if (recorder == null) return;
@@ -170,7 +172,12 @@ namespace ExtraLimb.UI
             });
             Bind("NextCondition", _ => runner?.Next());
             Bind("PrevCondition", _ => runner?.Previous());
-            Bind("StartTrial", _ => runner?.StartTrial());
+            Bind("StartTrial", _ =>
+            {
+                if (runner == null) return;
+                if (runner.IsExperimentMode) runner.StartTrial();
+                else runner.StartPractice();
+            });
             Bind("AbortTrial", _ => runner?.Abort());
             Bind("RedoCondition", _ => runner?.Redo());
             BindRating();
@@ -197,6 +204,17 @@ namespace ExtraLimb.UI
         }
 
         bool IsTyping => panel != null && panel.IsTypingText;
+
+        // 実験モードでは、条件で決まる設定を変えるキーを効かせない（押したら知らせる）
+        Action<string> Unlocked(Action<string> run) => origin =>
+        {
+            if (runner != null && runner.ConditionSettingsLocked)
+            {
+                runner.NotifyLocked();
+                return;
+            }
+            run(origin);
+        };
 
         // 押したキーの名前を出どころにして呼ぶ
         void Bind(string name, Action<string> run)

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using ExtraLimb.Core;
 using ExtraLimb.Limb;
 using UnityEngine;
@@ -59,6 +60,11 @@ namespace ExtraLimb.Experiment
     /// <item>記録：できごとは LimbSession のイベント（events.csv）、条件ごとの1行は conditions.csv。</item>
     /// </list>
     /// 操作は実験者パネルとホットキー（PageDown / PageUp、Enter、Esc、R、数字キー）から呼ぶ。
+    /// <para>
+    /// モード（WorkshopMode、2026-11-12）：デモでは提示順を使わず、今の設定のままの練習（リーチング課題）だけを行う。
+    /// 実験では、生やす位置 × 入力部位の12条件（入力部位ごとの型は ExperimentDesign で1つ）を提示順どおりに進める。
+    /// 実験モードに入ると記録を始め、2本目を隠して、読み込んである条件の設定に戻す。
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(10030)]
     public class ConditionRunner : MonoBehaviour
@@ -86,6 +92,10 @@ namespace ExtraLimb.Experiment
         [SerializeField] TrialTiming timing = new TrialTiming();
         [Tooltip("提示順を作ったとき、記録を参加者IDの名前のフォルダで始め直す")]
         [SerializeField] bool restartRecordingWithParticipant = true;
+        [Tooltip("再生を始めたときのモード。デモなら記録を自動で始めない（実験モードに切り替えたときに始める）")]
+        [SerializeField] WorkshopMode startMode = WorkshopMode.Demo;
+        [Tooltip("実験で入力部位ごとに使う型を保存するファイル（Application.persistentDataPath/ExtraLimb/ の下）")]
+        [SerializeField] string designFileName = "experiment_design.json";
 
         [Header("HMD に出す文")]
         [SerializeField] string conditionChangedText = "条件が変わります";
@@ -119,6 +129,9 @@ namespace ExtraLimb.Experiment
         string message = "";
         IParticipantNotice notice;
         IConditionTask task;
+        WorkshopMode mode;
+        bool modeInitialized;
+        ExperimentDesign design;
 
         /// <summary>今の提示順（なければ null）。</summary>
         public ConditionPlan Plan => plan;
@@ -201,6 +214,23 @@ namespace ExtraLimb.Experiment
         /// <summary>今の右の追加肢の設定が、読み込んだ条件と同じか（2本目を出していても違うとみなす）。</summary>
         public bool MatchesCurrent => Matches(Current);
 
+        /// <summary>今のモード（デモ／実験）。</summary>
+        public WorkshopMode Mode => mode;
+
+        public bool IsExperimentMode => mode == WorkshopMode.Experiment;
+
+        /// <summary>条件で決まる設定（生やす位置・入力部位・型・反転・ゲイン・2本目）を、パネルとホットキーから変えられないか（実験モード）。</summary>
+        public bool ConditionSettingsLocked => IsExperimentMode;
+
+        /// <summary>実験で入力部位ごとに使う型。</summary>
+        public ExperimentDesign Design => design ??= new ExperimentDesign();
+
+        /// <summary>実験で入力部位ごとに使う型を保存するファイル。</summary>
+        public string DesignFilePath => Path.Combine(Application.persistentDataPath, "ExtraLimb", designFileName);
+
+        /// <summary>モードを切り替えた直後。</summary>
+        public event Action<WorkshopMode> ModeChanged;
+
         /// <summary>段階が変わった直後。</summary>
         public event Action<TrialPhase> PhaseChanged;
 
@@ -238,6 +268,14 @@ namespace ExtraLimb.Experiment
             if (recorder == null) recorder = FindFirstObjectByType<ExperimentRecorder>();
             if (session != null) session.EventRaised += OnSessionEvent;
             else Debug.LogWarning("[ExtraLimb] 条件の進行：LimbSession がシーンにありません", this);
+            if (!modeInitialized)
+            {
+                modeInitialized = true;
+                mode = startMode;
+                LoadDesign();
+                // 記録は実験モードで始める（ExperimentRecorder.Start より前に決める）
+                if (recorder != null) recorder.AutoStart = mode == WorkshopMode.Experiment;
+            }
         }
 
         void OnDisable()
@@ -278,6 +316,105 @@ namespace ExtraLimb.Experiment
             if (e.type == SessionEventTypes.RecenterRequest) recenterRequests++;
         }
 
+        // ---- モード ----
+
+        /// <summary>
+        /// デモ／実験を切り替える。課題の途中と口頭評価の入力中は切り替えない。
+        /// 実験モードに入ると、記録していなければ記録を始め、2本目を隠し、準備中の条件があればその設定に戻す。
+        /// </summary>
+        public bool SetMode(WorkshopMode next)
+        {
+            if (next == mode) return true;
+            if (IsRunning) return Fail("課題の途中です。中止（Esc）してから切り替えてください");
+            if (phase == TrialPhase.Rating) return Fail("口頭評価を入れてから切り替えてください");
+            var previous = mode;
+            mode = next;
+            if (next == WorkshopMode.Experiment && recorder != null && !recorder.IsRecording)
+                recorder.StartRecording(session != null ? session.CurrentOrigin : ChangeOrigins.Api, plan?.participantId);
+            Report(SessionEventTypes.Mode, "session", "mode", ModeKey(previous), ModeKey(next),
+                next == WorkshopMode.Experiment ? "実験モードにしました" : "デモモードにしました");
+            if (next == WorkshopMode.Experiment) RestoreConditionSettings();
+            Say("");
+            Debug.Log($"[ExtraLimb] {(next == WorkshopMode.Experiment ? "実験" : "デモ")}モードにしました");
+            ModeChanged?.Invoke(next);
+            return true;
+        }
+
+        // 実験モードに入ったとき：使うのは右の1本だけ。準備中の条件があれば、その設定に戻す（デモで変えたものを戻す）
+        void RestoreConditionSettings()
+        {
+            if (session == null) return;
+            if (Current != null && phase == TrialPhase.Ready && !Matches(Current))
+            {
+                ApplySpec(Current);
+                return;
+            }
+            if (session.TwoLimbs) session.SetTwoLimbs(false);
+            session.SelectSide(LimbSide.Right);
+        }
+
+        /// <summary>実験モードで、条件で決まる設定を変えようとしたときに知らせる。</summary>
+        public void NotifyLocked() => Say("実験モードでは条件の設定は変えられません（変えるときはデモモードへ）");
+
+        static string ModeKey(WorkshopMode value) => value == WorkshopMode.Experiment ? "experiment" : "demo";
+
+        bool RequireExperiment() => IsExperimentMode || Fail("デモモードでは使えません（実験モードに切り替えてください）");
+
+        // ---- 実験で使う型 ----
+
+        /// <summary>実験で入力部位 site に使う型（選んでいなければその部位の既定の型）。</summary>
+        public MappingPreset ExperimentMapping(BodySite site) => session != null ? Design.Resolve(session.MappingPresetList, site) : null;
+
+        /// <summary>実験で入力部位 site に使う型を選び、保存する（デモモードだけ）。作ってある提示順には、作り直すまで反映しない。</summary>
+        public bool SetExperimentMapping(BodySite site, MappingPreset preset)
+        {
+            if (preset == null || session == null) return false;
+            if (ConditionSettingsLocked)
+            {
+                NotifyLocked();
+                return false;
+            }
+            var old = ExperimentMapping(site);
+            if (old == preset) return false;
+            Design.Set(site, preset.id);
+            SaveDesign();
+            string siteName = BodySiteNames.Japanese(site);
+            Report(SessionEventTypes.ExperimentMapping, "session", site.ToString(), old != null ? old.id : "", preset.id,
+                $"実験で{siteName}に使う型を「{MappingPresets.ShortName(preset)}」にしました");
+            bool planDiffers = false;
+            if (plan != null)
+                foreach (var condition in plan.conditions)
+                    if (condition.inputSite == site && condition.mappingPresetId != preset.id) planDiffers = true;
+            Say(planDiffers ? $"{siteName}の型を変えました。今の提示順に反映するには、実験モードで提示順を作り直してください" : "");
+            return true;
+        }
+
+        void LoadDesign()
+        {
+            design = new ExperimentDesign();
+            try
+            {
+                if (File.Exists(DesignFilePath)) design = ExperimentDesign.FromJson(File.ReadAllText(DesignFilePath));
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ExtraLimb] 実験で使う型を読めませんでした（既定の型を使います）：{DesignFilePath}\n{e.Message}", this);
+            }
+        }
+
+        void SaveDesign()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(DesignFilePath));
+                File.WriteAllText(DesignFilePath, Design.ToJson());
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ExtraLimb] 実験で使う型を保存できませんでした：{DesignFilePath}\n{e.Message}", this);
+            }
+        }
+
         // ---- 提示順 ----
 
         /// <summary>
@@ -286,6 +423,7 @@ namespace ExtraLimb.Experiment
         /// </summary>
         public bool CreatePlan(string participantId, int? row = null)
         {
+            if (!IsExperimentMode) return Fail("提示順は実験モードで作ります");
             if (IsRunning)
             {
                 Say("課題の途中です。中止（Esc）してから作り直してください");
@@ -308,10 +446,12 @@ namespace ExtraLimb.Experiment
             foreach (var point in mount.Registry.Points)
                 if (point != null) attachPoints.Add(new ConditionSequence.Option(point.id, point.displayName));
             var presets = session.MappingPresetList;
+            // 入力部位ごとの型は1つ（実験で使う型）。生やす位置 × 入力部位の条件になる
             var newPlan = ConditionSequence.Build(participantId, attachPoints, session.InputSites, site =>
             {
                 var options = new List<ConditionSequence.Option>();
-                foreach (var preset in MappingPresets.ForSite(presets, site)) options.Add(new ConditionSequence.Option(preset.id, preset.displayName));
+                var preset = Design.Resolve(presets, site);
+                if (preset != null) options.Add(new ConditionSequence.Option(preset.id, preset.displayName));
                 return options;
             }, row);
             if (newPlan.Count == 0)
@@ -341,17 +481,30 @@ namespace ExtraLimb.Experiment
             }
             string order = $"{plan.latinRow + 1}/{plan.latinRowCount}：{plan.BlockOrderText}";
             Report(SessionEventTypes.Sequence, "session", participantId, "", order,
-                $"提示順を作りました：{participantId}、ブロックの順 {order}、全{plan.Count}条件");
+                $"提示順を作りました：{participantId}、ブロックの順 {order}、全{plan.Count}条件、型 {DesignText()}");
             recorder?.SaveJson(SequenceFileName, JsonUtility.ToJson(plan, true));
             Say("");
             Debug.Log($"[ExtraLimb] 提示順：{participantId}、ブロックの順 {order}、全{plan.Count}条件");
             return true;
         }
 
+        /// <summary>実験で使う型の一覧（右足首＝並進、…）。</summary>
+        public string DesignText()
+        {
+            if (session == null) return "";
+            var parts = new List<string>();
+            foreach (var site in session.InputSites)
+            {
+                var preset = ExperimentMapping(site);
+                parts.Add($"{BodySiteNames.Japanese(site)}＝{(preset != null ? MappingPresets.ShortName(preset) : "なし")}");
+            }
+            return string.Join("、", parts);
+        }
+
         // ---- 条件の読み込み ----
 
-        /// <summary>提示順の index 番目（0 始まり）の条件を読み込む。課題の途中や評価の入力中は読み込まない。</summary>
-        public bool Load(int index) => Load(index, true);
+        /// <summary>提示順の index 番目（0 始まり）の条件を読み込む。課題の途中や評価の入力中は読み込まない。実験モードだけ。</summary>
+        public bool Load(int index) => RequireExperiment() && Load(index, true);
 
         bool Load(int index, bool announce)
         {
@@ -420,6 +573,7 @@ namespace ExtraLimb.Experiment
         /// <summary>次の条件を読み込む（PageDown）。</summary>
         public bool Next()
         {
+            if (!RequireExperiment()) return false;
             if (!HasPlan) return Fail("提示順がありません（参加者IDを入れて「提示順を作成」）");
             if (currentIndex + 1 >= plan.Count) return Fail("最後の条件です");
             return Load(currentIndex + 1);
@@ -428,6 +582,7 @@ namespace ExtraLimb.Experiment
         /// <summary>前の条件を読み込む（PageUp）。</summary>
         public bool Previous()
         {
+            if (!RequireExperiment()) return false;
             if (!HasPlan) return Fail("提示順がありません");
             if (currentIndex <= 0) return Fail("最初の条件です");
             return Load(currentIndex - 1);
@@ -436,6 +591,7 @@ namespace ExtraLimb.Experiment
         /// <summary>今の条件を読み込み直して、始めからやり直す（R）。HMD には通知を出さない。</summary>
         public bool Redo()
         {
+            if (!RequireExperiment()) return false;
             if (IsRunning) return Fail("課題の途中です。中止（Esc）してから");
             if (Current == null) return Fail("条件を読み込んでいません");
             if (phase == TrialPhase.Rating) Abort();
@@ -447,6 +603,7 @@ namespace ExtraLimb.Experiment
         /// <summary>読み込んだ条件の課題を始める（Enter）：案内 → カウントダウン → 前半 → 案内 → カウントダウン → 後半。</summary>
         public bool StartTrial()
         {
+            if (!RequireExperiment()) return false;
             if (phase != TrialPhase.Ready)
                 return Fail(phase == TrialPhase.Idle ? "先に条件を読み込んでください（次へ：PgDn）" :
                     IsRunning ? "課題の途中です" : "この条件は終わっています（やり直しは R、次へは PgDn）");

@@ -681,3 +681,128 @@
     color: var(--caution);
     -unity-font-style: bold;
 }
+
+/* ---- モードの切り替え（見出しの右） ---- */
+
+.el-panel__title {
+    flex-grow: 1;
+}
+
+.el-segmented.el-segmented--mode {
+    flex-grow: 0;
+    width: 132px;
+    margin: 0 12px 0 0;
+}
+
+.el-segmented--mode > .el-button {
+    min-height: 26px;
+}
+
+/* 押せないが選んでいるもの（実験モードの追加肢の設定）は読めるように残す */
+.el-button--selected:disabled {
+    opacity: 0.8;
+}
+
+/* ---- デモ：組み合わせの一覧（行＝入力の部位と型、列＝生やす位置） ---- */
+
+.el-combo-row {
+    flex-direction: row;
+    align-items: center;
+    margin: 1px 0;
+}
+
+.el-combo-row--head {
+    margin: 2px 0 2px 0;
+}
+
+.el-combo-row--site {
+    margin-top: 8px;
+}
+
+.el-combo-label {
+    width: 164px;
+    flex-shrink: 0;
+    flex-direction: row;
+    align-items: center;
+    margin: 0;
+}
+
+.el-combo-row--head > .el-combo-label {
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+.el-combo-site {
+    width: 52px;
+    flex-shrink: 0;
+    margin: 0;
+    -unity-font-style: bold;
+}
+
+.el-combo-label > .el-combo-type {
+    flex-grow: 1;
+    margin: 0;
+    color: var(--text-2);
+    font-size: 12px;
+}
+
+.el-combo-head {
+    flex-grow: 1;
+    flex-basis: 0;
+    margin: 0 2px;
+    font-size: 11px;
+    color: var(--text-3);
+    -unity-text-align: middle-center;
+}
+
+.el-combo-head.el-combo-chipcol {
+    flex-grow: 0;
+    flex-basis: auto;
+    width: 52px;
+    margin: 0 0 0 6px;
+}
+
+.el-button.el-combo-cell {
+    flex-grow: 1;
+    flex-basis: 0;
+    min-height: 26px;
+    margin: 0 2px;
+    background-color: var(--surface);
+    border-width: 1px;
+    border-color: var(--line);
+}
+
+.el-button.el-combo-cell:hover {
+    background-color: var(--control-hover);
+}
+
+.el-button.el-combo-cell.el-button--selected {
+    background-color: var(--live);
+    border-color: var(--live);
+}
+
+/* 小さな札のボタン（実験で使う型） */
+.el-button.el-button--chip {
+    width: 52px;
+    min-height: 22px;
+    margin: 0 0 0 6px;
+    padding: 0;
+    font-size: 11px;
+    background-color: transparent;
+    border-width: 1px;
+    border-color: var(--line-strong);
+    border-radius: 11px;
+    color: var(--text-3);
+}
+
+.el-button.el-button--chip:hover {
+    color: var(--text);
+    border-color: rgb(104, 111, 121);
+}
+
+.el-button.el-button--chip.el-button--selected {
+    background-color: var(--live-tint);
+    border-color: var(--live);
+    color: var(--live-tint-text);
+    -unity-font-style: bold;
+}

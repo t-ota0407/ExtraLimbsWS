@@ -17,7 +17,9 @@ namespace ExtraLimb.UI
     /// <list type="bullet">
     /// <item>左上の表示：条件と段階・残り時間（大きな数字と進み具合の線）、動かしている追加肢の設定（生やす位置｜入力の部位｜型｜ゲイン）と追跡が切れたときの札（赤）、
     /// 記録の状態、機器の異常（ITrackerProviderStatus のうち知らせることがあるものだけ）。</item>
-    /// <item>パネル：使う順に、参加者（ID・提示順・身長と肩幅）、条件の進行（読み込み・課題・口頭評価）、リーチング課題、追加肢、記録。
+    /// <item>パネルの上で、デモと実験を切り替える（WorkshopMode）。デモでは「デモ」の欄（今の設定のままの練習、生やす位置 × 入力部位 × 型の全組み合わせの一覧、
+    /// 実験で使う型の選択）を、実験では「条件の進行」の欄を出す。実験モードでは、条件で決まる設定を変えるボタンを押せなくする。</item>
+    /// <item>パネル：使う順に、参加者（ID・提示順・身長と肩幅）、デモまたは条件の進行（読み込み・課題・口頭評価）、リーチング課題、追加肢、記録。
     /// たまに使う欄（表示、HMD へのメッセージ、入力の詳細、ログの再生、動作確認用のボタン、ホットキー）はたたんでおく。</item>
     /// </list>
     /// 実験者が読むので、手順に要らない情報（実装のステップ、クラス名、内部の値）は出さない。ボタンのキーは小さく添える。
@@ -81,12 +83,25 @@ namespace ExtraLimb.UI
         readonly List<ITrackerProviderStatus> providers = new List<ITrackerProviderStatus>();
         TrackerMonitor monitor;
 
+        // モード
+        Button demoModeButton, experimentModeButton;
+
         // 参加者
         TextField participantField, rowField, heightField, shoulderField;
-        Label planLabel, participantMessage, bodyMessage;
+        Label planLabel, designLabel, participantMessage, bodyMessage;
         Button createPlanButton;
+        VisualElement idRow;
+
+        // デモ（今の設定のままの練習、組み合わせの一覧、実験で使う型）
+        Foldout demoSection;
+        Label demoPhaseLabel, demoMessage;
+        Button demoStartButton, demoAbortButton;
+        readonly List<(Button button, int pointIndex, string pointId, BodySite site, MappingPreset preset)> comboButtons =
+            new List<(Button, int, string, BodySite, MappingPreset)>();
+        readonly List<(Button button, BodySite site, MappingPreset preset)> designChips = new List<(Button, BodySite, MappingPreset)>();
 
         // 条件の進行
+        Foldout runnerSection;
         Label conditionLabel, conditionInstruction, phaseLabel, recenterLabel, runnerMessage;
         Button startButton, abortButton, redoButton, prevButton, nextButton, practiceButton;
         readonly Label[] ratingLabels = new Label[3];
@@ -115,12 +130,15 @@ namespace ExtraLimb.UI
         VisualElement presetRow;
         readonly List<(Button button, MappingPreset preset)> presetButtons = new List<(Button, MappingPreset)>();
         BodySite? presetSite;
-        Label axesLabel, gainLabel, forwardLabel, forwardMessage;
+        Label axesLabel, gainLabel, forwardLabel, forwardMessage, limbLockNote;
         readonly Toggle[] invertToggles = new Toggle[3];
+        // 実験モードでは押せない（条件で決まる設定を変える）ボタン
+        readonly List<VisualElement> lockables = new List<VisualElement>();
 
         // 入力の詳細
         Foldout detailSection;
         Label inputLabel, referenceLabel, uLabel, instructionLabel, leverLabel, graspLabel;
+        Button referenceButton;
         readonly Label[,] channelCells = new Label[6, 5];
 
         // 記録
@@ -281,6 +299,14 @@ namespace ExtraLimb.UI
             var title = new Label("実験者パネル");
             title.AddToClassList("el-panel__title");
             header.Add(title);
+            if (runner != null)
+            {
+                // デモ／実験の切り替え
+                var modes = Segmented(header);
+                modes.AddToClassList("el-segmented--mode");
+                demoModeButton = Btn(modes, "デモ", () => runner.SetMode(WorkshopMode.Demo));
+                experimentModeButton = Btn(modes, "実験", () => runner.SetMode(WorkshopMode.Experiment));
+            }
             var hide = new Label("H で隠す");
             hide.AddToClassList("el-panel__hint");
             header.Add(hide);
@@ -296,7 +322,9 @@ namespace ExtraLimb.UI
                 return;
             }
 
+            lockables.Clear();
             BuildParticipantSection(scroll);
+            BuildDemoSection(scroll);
             BuildRunnerSection(scroll);
             BuildReachSection(scroll);
             BuildLimbSection(scroll);
@@ -314,7 +342,7 @@ namespace ExtraLimb.UI
             var section = Section(parent, "参加者", true);
             if (runner != null)
             {
-                var idRow = Row(section);
+                idRow = Row(section);
                 Text("参加者ID", "el-field-label", idRow);
                 participantField = Field(idRow, 90);
                 Text("順序", "el-field-label", idRow);
@@ -323,6 +351,7 @@ namespace ExtraLimb.UI
                 createPlanButton = Btn(idRow, "提示順を作成", CreatePlan);
                 participantMessage = Text("", "el-caution", section);
                 planLabel = Text("", "el-muted", section);
+                designLabel = Text("", "el-muted", section);
             }
 
             var bodyRow = Row(section);
@@ -359,10 +388,85 @@ namespace ExtraLimb.UI
             runner.CreatePlan(participantField.value, row);
         }
 
+        // デモ：今の設定のまま練習する。生やす位置 × 入力部位 × 型の全組み合わせを一覧から選び、実験で使う型（部位ごとに1つ）も選ぶ
+        void BuildDemoSection(VisualElement parent)
+        {
+            if (runner == null) return;
+            demoSection = Section(parent, "デモ", true);
+            demoPhaseLabel = Text("", "el-phase", demoSection);
+            var row = Row(demoSection);
+            Btn(row, Key("Re-center", "Space"), () => session.RequestRecenter(), true);
+            demoStartButton = Btn(row, Key("課題を開始", "Enter"), () => runner.StartPractice(), true);
+            demoAbortButton = Btn(row, Key("中止", "Esc"), () => runner.Abort(), true);
+            demoAbortButton.AddToClassList("el-button--danger");
+            demoMessage = Text("", "el-caution", demoSection);
+
+            SubHeader(demoSection, "組み合わせ", "押すとその組み合わせになります");
+            comboButtons.Clear();
+            designChips.Clear();
+            var mount = session.Primary?.Mount;
+            if (mount == null)
+            {
+                Text("生やす位置が設定されていません", "el-muted", demoSection);
+                return;
+            }
+            var points = mount.Registry.Points;
+            var head = new VisualElement();
+            head.AddToClassList("el-combo-row");
+            head.AddToClassList("el-combo-row--head");
+            demoSection.Add(head);
+            Text("入力の部位・型", "el-combo-label", head);
+            foreach (var point in points)
+                if (point != null) Text(point.displayName, "el-combo-head", head);
+            Text("実験", "el-combo-head", head).AddToClassList("el-combo-chipcol");
+            foreach (var site in session.InputSites)
+            {
+                bool first = true;
+                foreach (var preset in MappingPresets.ForSite(session.MappingPresetList, site))
+                {
+                    var comboRow = new VisualElement();
+                    comboRow.AddToClassList("el-combo-row");
+                    if (first) comboRow.AddToClassList("el-combo-row--site");
+                    demoSection.Add(comboRow);
+                    var label = new VisualElement();
+                    label.AddToClassList("el-combo-label");
+                    comboRow.Add(label);
+                    Text(first ? BodySiteNames.Japanese(site) : "", "el-combo-site", label);
+                    Text(MappingPresets.ShortName(preset), "el-combo-type", label);
+                    for (int i = 0; i < points.Count; i++)
+                    {
+                        var point = points[i];
+                        if (point == null) continue;
+                        int pointIndex = i;
+                        var targetSite = site;
+                        var targetPreset = preset;
+                        var cell = Btn(comboRow, "", () => ApplyCombo(pointIndex, targetSite, targetPreset));
+                        cell.AddToClassList("el-combo-cell");
+                        comboButtons.Add((cell, pointIndex, point.id, site, preset));
+                    }
+                    var designSite = site;
+                    var designPreset = preset;
+                    var chip = Btn(comboRow, "実験", () => runner.SetExperimentMapping(designSite, designPreset));
+                    chip.AddToClassList("el-button--chip");
+                    designChips.Add((chip, site, preset));
+                    first = false;
+                }
+            }
+            Text("「実験」の印は、実験モードでその入力部位に使う型です（部位ごとに1つ。押して選びます）", "el-muted", demoSection);
+        }
+
+        // 一覧の組み合わせにする：生やす位置（左右とも）、設定している追加肢の入力の部位と型（ゲインは型の初期値）
+        void ApplyCombo(int pointIndex, BodySite site, MappingPreset preset)
+        {
+            session.SelectAttachPoint(pointIndex);
+            session.SelectInputSite(site);
+            session.SelectMappingPreset(preset);
+        }
+
         void BuildRunnerSection(VisualElement parent)
         {
             if (runner == null) return;
-            var section = Section(parent, "条件の進行", true);
+            var section = runnerSection = Section(parent, "条件の進行", true);
             conditionLabel = Text("", "el-condition", section);
             conditionInstruction = Text("", "el-muted", section);
             phaseLabel = Text("", "el-phase", section);
@@ -420,12 +524,15 @@ namespace ExtraLimb.UI
         void BuildLimbSection(VisualElement parent)
         {
             limbSection = Section(parent, "追加肢", true);
+            limbLockNote = Text("実験モードでは、条件で決まる設定（生やす位置・入力の部位・型・反転・ゲイン）は変えられません。変えるときはデモモードへ", "el-muted", limbSection);
 
             sideRow = Row(limbSection);
             var sides = Segmented(sideRow);
             rightButton = Btn(sides, Key("右", "→"), () => session.SelectSide(LimbSide.Right), true);
             leftButton = Btn(sides, Key("左", "←"), () => session.SelectSide(LimbSide.Left), true);
             twoLimbsButton = Btn(sideRow, "", () => session.SetTwoLimbs(!session.TwoLimbs));
+            lockables.Add(rightButton);
+            lockables.Add(twoLimbsButton);
             if (!session.HasLeftLimb) Show(sideRow, false);
 
             var attachHeader = SubHeader(limbSection, "生やす位置", null);
@@ -443,6 +550,7 @@ namespace ExtraLimb.UI
                     int index = i;
                     var button = Btn(attachRow, Key(point.displayName, $"F{i + 1}"), () => session.SelectAttachPoint(index), true);
                     attachButtons.Add((button, point));
+                    lockables.Add(button);
                 }
             }
             else
@@ -463,6 +571,7 @@ namespace ExtraLimb.UI
                 var target = site;
                 var button = Btn(siteRow, BodySiteNames.Japanese(site), () => session.SelectInputSite(target), true);
                 siteButtons.Add((button, site));
+                lockables.Add(button);
             }
             channelStatus = Text("", "el-warn", limbSection);
             assignHint = Text("", "el-muted", limbSection);
@@ -492,8 +601,8 @@ namespace ExtraLimb.UI
             var gain = Row(limbSection);
             gainLabel = Text("", "el-field-label", gain);
             gainLabel.style.minWidth = 76;
-            Btn(gain, Key("−0.5", "↓"), () => ChangeGain(-0.5f));
-            Btn(gain, Key("＋0.5", "↑"), () => ChangeGain(0.5f));
+            lockables.Add(Btn(gain, Key("−0.5", "↓"), () => ChangeGain(-0.5f)));
+            lockables.Add(Btn(gain, Key("＋0.5", "↑"), () => ChangeGain(0.5f)));
 
             var forward = Row(limbSection);
             forward.AddToClassList("el-row--nowrap");
@@ -580,7 +689,8 @@ namespace ExtraLimb.UI
             var reference = Row(detailSection);
             referenceLabel = Text("", null, reference);
             referenceLabel.style.flexGrow = 1;
-            Btn(reference, "基準を切り替え", () => session.CycleReference());
+            referenceButton = Btn(reference, "基準を切り替え", () => session.CycleReference());
+            lockables.Add(referenceButton);
             uLabel = Text("", null, detailSection);
 
             var header = new VisualElement();
@@ -657,6 +767,7 @@ namespace ExtraLimb.UI
             var section = Section(parent, "ホットキー", false);
             hotkeyList = new VisualElement();
             section.Add(hotkeyList);
+            Text("実験モードでは、生やす位置・入力の部位・型・ゲイン・2本目・左右の選択のキーは効きません。デモモードの Enter は練習の開始です", "el-muted", section);
             Text("Unity エディタで使うときは、Game ビューの「Unity Shortcuts」をオフにしてください", "el-muted", section);
             FillHotkeys();
         }
@@ -865,7 +976,9 @@ namespace ExtraLimb.UI
             if (!built || session == null) return;
             RefreshBanner();
             if (!visible) return;
+            RefreshMode();
             RefreshParticipant();
+            RefreshDemo();
             RefreshRunner();
             RefreshReach();
             var channel = session.Selected;
@@ -949,17 +1062,23 @@ namespace ExtraLimb.UI
 
         void RefreshBanner()
         {
-            // 条件と段階
-            bool showRunner = runner != null && (runner.HasPlan || runner.IsPractice);
-            Show(bannerMeta, showRunner);
+            // モード、条件と段階（デモでは練習の間だけ段階を出す）
+            bool demo = runner != null && !runner.IsExperimentMode;
+            bool showRunner = runner != null && (runner.IsPractice || (!demo && runner.HasPlan));
+            Show(bannerMeta, runner != null);
             Show(bannerHeadline, showRunner);
             Show(bannerProgress, false);
-            if (showRunner)
+            if (runner != null)
             {
                 var spec = runner.Current;
-                SetText(bannerMeta, runner.IsPractice ? "練習（条件に数えない）"
+                SetText(bannerMeta, demo ? (runner.IsPractice ? "デモ　練習" : "デモ")
+                    : runner.IsPractice ? "練習（条件に数えない）"
                     : spec != null ? $"条件 {spec.order + 1}/{runner.Plan.Count}　ブロック {spec.block + 1}/{runner.Plan.BlockCount}"
-                    : runner.Plan.participantId);
+                    : runner.HasPlan ? runner.Plan.participantId
+                    : "実験　提示順を作成してください");
+            }
+            if (showRunner)
+            {
                 RunnerBannerParts(out string phase, out string time, out float progress);
                 SetText(bannerPhase, phase);
                 SetText(bannerTimer, time);
@@ -999,6 +1118,10 @@ namespace ExtraLimb.UI
                 sub.Append($"<color={DangerHex}>●</color>  記録中 {(int)elapsed.TotalMinutes:00}:{elapsed.Seconds:00}");
                 if (recorder.MarkerCount > 0) sub.Append($"　マーカー {recorder.MarkerCount}");
             }
+            else if (runner != null && !runner.IsExperimentMode)
+            {
+                sub.Append("記録していません（L で開始）");
+            }
             else
             {
                 sub.Append($"<color={CautionHex}>記録していません（L で開始）</color>");
@@ -1037,6 +1160,50 @@ namespace ExtraLimb.UI
             }
         }
 
+        // モードの切り替えと、モードで出す欄
+        void RefreshMode()
+        {
+            if (runner == null) return;
+            bool experiment = runner.IsExperimentMode;
+            bool canSwitch = !runner.IsRunning && runner.Phase != TrialPhase.Rating;
+            demoModeButton.EnableInClassList(SelectedClass, !experiment);
+            experimentModeButton.EnableInClassList(SelectedClass, experiment);
+            demoModeButton.SetEnabled(canSwitch || !experiment);
+            experimentModeButton.SetEnabled(canSwitch || experiment);
+            Show(idRow, experiment);
+            Show(planLabel, experiment && planLabel.text.Length > 0);
+            Show(designLabel, experiment);
+            if (!experiment) Show(participantMessage, false);
+            Show(demoSection, !experiment);
+            Show(runnerSection, experiment);
+        }
+
+        void RefreshDemo()
+        {
+            if (runner == null || demoSection == null || runner.IsExperimentMode) return;
+            bool running = runner.IsRunning;
+            SetText(demoPhaseLabel, runner.IsPractice ? RunnerPhaseText() : "今の設定のまま課題を試せます（Re-center → 課題を開始）");
+            demoPhaseLabel.EnableInClassList("el-live", runner.Segment > 0);
+            demoPhaseLabel.EnableInClassList("el-muted", !runner.IsPractice);
+            demoStartButton.SetEnabled(!running && runner.Phase != TrialPhase.Rating);
+            demoStartButton.EnableInClassList(PrimaryClass, !running);
+            demoAbortButton.SetEnabled(running);
+            ShowText(demoMessage, runner.Message);
+            if (!demoSection.value) return;
+
+            var channel = session.Selected;
+            var config = channel != null ? channel.Config : null;
+            foreach (var (button, _, pointId, site, preset) in comboButtons)
+            {
+                bool current = config != null && config.attachPointId == pointId && config.inputSite == site
+                               && config.mappingPresetId == preset.id && string.IsNullOrEmpty(config.inputSourceId);
+                button.EnableInClassList(SelectedClass, current);
+                button.SetEnabled(!running);
+            }
+            foreach (var (chip, site, preset) in designChips)
+                chip.EnableInClassList(SelectedClass, runner.ExperimentMapping(site) == preset);
+        }
+
         void RefreshParticipant()
         {
             if (participantMessage != null && participantMessage.text.Length == 0) Show(participantMessage, false);
@@ -1045,16 +1212,17 @@ namespace ExtraLimb.UI
                 var plan = runner.Plan;
                 if (plan != null && participantField != null && string.IsNullOrEmpty(participantField.value) && !IsTypingText)
                     participantField.SetValueWithoutNotify(plan.participantId);
-                ShowText(planLabel, plan != null
+                ShowText(planLabel, plan != null && runner.IsExperimentMode
                     ? $"{plan.participantId}　順序 {plan.latinRow + 1}/{plan.latinRowCount}：{plan.BlockOrderText}　完了 {runner.DoneCount}/{plan.Count}"
                     : "");
             }
+            if (designLabel != null && runner.IsExperimentMode) SetText(designLabel, $"実験で使う型：{runner.DesignText()}（変えるときはデモモードで）");
             if (bodyMessage != null) ShowText(bodyMessage, session.BodyMessage);
         }
 
         void RefreshRunner()
         {
-            if (runner == null || conditionLabel == null) return;
+            if (runner == null || conditionLabel == null || !runner.IsExperimentMode) return;
             var plan = runner.Plan;
             var spec = runner.Current;
             SetText(conditionLabel, spec != null
@@ -1188,11 +1356,15 @@ namespace ExtraLimb.UI
         void RefreshLimb(LimbChannel channel)
         {
             var config = channel.Config;
+            // 実験モードでは、条件で決まる設定を変えるボタンを押せなくする
+            bool locked = runner != null && runner.ConditionSettingsLocked;
+            Show(limbLockNote, locked);
+            foreach (var element in lockables) element.SetEnabled(!locked);
             if (session.HasLeftLimb)
             {
                 rightButton.EnableInClassList(SelectedClass, channel.Side == LimbSide.Right);
                 leftButton.EnableInClassList(SelectedClass, channel.Side == LimbSide.Left);
-                leftButton.SetEnabled(session.TwoLimbs);
+                leftButton.SetEnabled(session.TwoLimbs && !locked);
                 SetText(twoLimbsButton, Key(session.TwoLimbs ? "2本目を隠す" : "2本目を出す", "T"));
             }
             limbSection.text = session.TwoLimbs ? $"追加肢（{channel.Label}を設定中）" : "追加肢";
@@ -1232,13 +1404,17 @@ namespace ExtraLimb.UI
                 }
                 if (presets.Count == 0) Text("この部位の型はありません", "el-muted", presetRow);
             }
-            foreach (var (button, preset) in presetButtons) button.EnableInClassList(SelectedClass, preset.id == config.mappingPresetId);
+            foreach (var (button, preset) in presetButtons)
+            {
+                button.EnableInClassList(SelectedClass, preset.id == config.mappingPresetId);
+                button.SetEnabled(!locked);
+            }
             var mapping = config.axisMapping;
             SetText(axesLabel, $"手先の右 ← {mapping.DescribeAxis(0)}　上 ← {mapping.DescribeAxis(1)}　前 ← {mapping.DescribeAxis(2)}");
             for (int axis = 0; axis < 3; axis++)
             {
                 invertToggles[axis].SetValueWithoutNotify(mapping.IsInverted(axis));
-                invertToggles[axis].SetEnabled(mapping[axis].IsUsed);
+                invertToggles[axis].SetEnabled(mapping[axis].IsUsed && !locked);
             }
             SetText(gainLabel, $"ゲイン {config.positionGain:F1}");
 
@@ -1357,7 +1533,7 @@ namespace ExtraLimb.UI
                 SetText(recordStatus, "記録していません");
                 SetText(recordFolder, $"保存先：{recorder.RootDirectory}");
             }
-            recordStatus.EnableInClassList("el-warn", !recorder.IsRecording);
+            recordStatus.EnableInClassList("el-warn", !recorder.IsRecording && (runner == null || runner.IsExperimentMode));
             SetText(recordButton, Key(recorder.IsRecording ? "記録を停止" : "記録を開始", "L"));
             ShowText(recordMessage, recorder.Message);
         }

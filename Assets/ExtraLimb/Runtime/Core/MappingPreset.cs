@@ -51,6 +51,15 @@ namespace ExtraLimb.Core
             return specific;
         }
 
+        /// <summary>型の短い名前（「膝：すねを振る」→「すねを振る」）。部位と並べて出すときに使う。</summary>
+        public static string ShortName(MappingPreset preset)
+        {
+            if (preset == null) return "";
+            string name = preset.displayName ?? "";
+            int colon = name.IndexOf('：');
+            return colon >= 0 && colon + 1 < name.Length ? name.Substring(colon + 1) : name;
+        }
+
         /// <summary>その部位の既定の型（ForSite の先頭）。なければ null。</summary>
         public static MappingPreset Default(IEnumerable<MappingPreset> presets, BodySite site)
         {

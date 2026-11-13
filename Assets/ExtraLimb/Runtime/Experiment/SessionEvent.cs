@@ -104,6 +104,12 @@ namespace ExtraLimb.Experiment
         /// <summary>参加者IDから提示順を作った（key＝参加者ID、new＝ラテン方格の行とブロックの順）。Step 4-3。</summary>
         public const string Sequence = "sequence";
 
+        /// <summary>デモモードと実験モードを切り替えた（old・new＝demo / experiment）。</summary>
+        public const string Mode = "mode";
+
+        /// <summary>実験モードで入力部位に使うマッピングの型を選んだ（key＝部位、old・new＝型のID）。</summary>
+        public const string ExperimentMapping = "experiment_mapping";
+
         /// <summary>条件を読み込んだ（key＝提示順の番号（1 始まり）、new＝条件の中身）。</summary>
         public const string Condition = "condition";
 
