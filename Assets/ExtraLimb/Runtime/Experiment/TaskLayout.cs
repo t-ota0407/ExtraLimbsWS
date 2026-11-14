@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace ExtraLimb.Experiment
 {
@@ -15,24 +16,26 @@ namespace ExtraLimb.Experiment
         [Header("円の中心（胸から）")]
         [Tooltip("体の前への距離（身長に対する比）")]
         public float forwardRatio = 0.17f;
-        [Tooltip("胸から上への高さ（身長に対する比。負なら下）。2026-11-13 に 0.09 から 0.08 へ（触れる点を見た目の指先に直して、脇腹から真上に届かなくなったため）")]
-        public float upRatio = 0.08f;
+        [Tooltip("胸から上への高さ（身長に対する比。負なら下）。0.06 で身長 180 cm のとき胸より約 11 cm 上。" +
+                 "2026-11-13 に 0.09 → 0.08（脇腹から真上に届くように）→ 0.06（顔の高さに見えたので下げた。胸の高さ（0）では直径 80 cm のとき頭部から真下に届かない）")]
+        public float upRatio = 0.06f;
         [Tooltip("体の正中から右への距離（肩幅に対する比。負なら左）。追加肢は左右2本なので正中（0）に置く（2026-11-13。右の1本だけのときは 0.3）")]
         public float rightRatio = 0f;
 
         [Header("円とターゲット")]
-        [Tooltip("円の半径（身長に対する比）。0.26 で身長 180 cm のとき直径およそ 94 cm（2026-11-13 に 0.28 から。どの生やす位置からも、左右どちらかの追加肢の指先が8か所すべてに届くように）")]
-        public float radiusRatio = 0.26f;
+        [Tooltip("円の半径（身長に対する比）。0.222 で身長 180 cm のとき直径およそ 80 cm。どの生やす位置からも、左右どちらかの追加肢の指先が8か所すべてに届くように決める" +
+                 "（2026-11-13：0.28 → 0.26（触れる点を見た目の指先に）→ 0.235（手を小さくした）→ 0.222（手の長さを身長と別に入れるようにした。手が身長の割に 2 cm 短い人でも届く））")]
+        public float radiusRatio = 0.222f;
         [Tooltip("ターゲットの数（円周上に等間隔。1つ目が真上で、参加者から見て時計回り）")]
         [Min(2)] public int targetCount = 8;
         [Tooltip("ターゲット（球）の半径（m）")]
         public float targetRadius = 0.03f;
 
         [Header("触れたとする距離")]
-        [Tooltip("追加肢の指先の太さの半分（m）。見た目の指先からこの距離だけ指の付け根の向きに戻った点を中心に、この半径の球が、ターゲットの球に重なったら触れたとする（球の先端が指先）")]
-        public float extraLimbProbeRadius = 0.01f;
-        [Tooltip("本来の手の大きさ（m）。手のひらの点がターゲットの表面からこの距離に入ったら触れたとする")]
-        public float handProbeRadius = 0.04f;
+        [Tooltip("指先の太さの半分（m）。追加肢も本来の手も、見た目の中指の先からこの距離だけ指の付け根の向きに戻った点を中心に、この半径の球が、ターゲットの球に重なったら触れたとする（球の先端が指先）。" +
+                 "2026-11-13 に本来の手も、手のひら（半径 4 cm）から追加肢と同じ指先にそろえた")]
+        [FormerlySerializedAs("extraLimbProbeRadius")]
+        public float probeRadius = 0.01f;
 
         /// <summary>胸の姿勢（体の向きにそろえたフレーム）と身長・肩幅（m）から、円を作る。</summary>
         public ReachRing Compute(Pose chest, float height, float shoulderWidth) =>

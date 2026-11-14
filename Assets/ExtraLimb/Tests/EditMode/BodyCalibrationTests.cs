@@ -73,5 +73,37 @@ namespace ExtraLimb.Tests.EditMode
             Assert.That(calibration.IsCalibrated, Is.False);
             Assert.That(calibration.AvatarScale, Is.EqualTo(1f).Within(1e-6f));
         }
-    }
+
+        [Test]
+        public void HandLength_Default18cm_RangeChecked_AndResetRestoresDefault()
+        {
+            var calibration = new BodyCalibration(ModelHeight, ModelShoulder);
+            Assert.That(calibration.HandLength, Is.EqualTo(0.18f).Within(1e-6f), "初期値は18cm");
+            Assert.That(calibration.TrySetHandLength(0.165f), Is.True);
+            Assert.That(calibration.HandLength, Is.EqualTo(0.165f).Within(1e-6f));
+            Assert.That(calibration.TrySetHandLength(0.10f), Is.False, "短すぎる");
+            Assert.That(calibration.TrySetHandLength(0.30f), Is.False, "長すぎる");
+            Assert.That(calibration.HandLength, Is.EqualTo(0.165f).Within(1e-6f), "範囲外は前の値のまま");
+            Assert.That(calibration.TrySet(1.7f, 0.4f), Is.True);
+            Assert.That(calibration.HandLength, Is.EqualTo(0.165f).Within(1e-6f), "身長・肩幅を入れても手の長さは変わらない");
+
+            Assert.That(calibration.TrySet(1.6f, 0.38f, 0.30f), Is.False, "3つのうち手の長さが範囲外");
+            Assert.That(calibration.Height, Is.EqualTo(1.7f).Within(1e-6f), "どれかが範囲外なら、ほかも変えない");
+            Assert.That(calibration.TrySet(1.6f, 0.38f, 0.17f), Is.True);
+            Assert.That(calibration.Height, Is.EqualTo(1.6f).Within(1e-6f));
+            Assert.That(calibration.HandLength, Is.EqualTo(0.17f).Within(1e-6f));
+
+            calibration.Reset();
+            Assert.That(calibration.HandLength, Is.EqualTo(BodyCalibration.DefaultHandLength).Within(1e-6f));
+        }
+
+        [Test]
+        public void HandBoneScale_IsTargetOverUnscaledLength()
+        {
+            var calibration = new BodyCalibration(ModelHeight, ModelShoulder);
+            Assert.That(calibration.TrySetHandLength(0.18f), Is.True);
+            Assert.That(calibration.HandBoneScale(0.24f), Is.EqualTo(0.75f).Within(1e-6f));
+            Assert.That(calibration.HandBoneScale(0f), Is.EqualTo(1f), "長さが分からなければ拡縮しない");
+        }
+}
 }

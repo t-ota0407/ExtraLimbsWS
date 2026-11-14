@@ -88,6 +88,38 @@ namespace ExtraLimb.Tests.EditMode
         }
 
         [Test]
+        public void ForwardFromSides_IsPerpendicularToLeftRightLine_ForAnyHeading()
+        {
+            // 体は yaw を向いて座っている。左右の膝は体の右・左に 12 cm ずつ（高さは少し違ってもよい）
+            var random = new System.Random(5);
+            for (int i = 0; i < 20; i++)
+            {
+                var yaw = Quaternion.AngleAxis((float)random.NextDouble() * 360f, Vector3.up);
+                var center = TestMath.RandomPosition(random, 1f);
+                var right = center + yaw * new Vector3(0.12f, 0.02f, 0f);
+                var left = center + yaw * new Vector3(-0.12f, -0.01f, 0f);
+
+                Assert.That(BodyFrameCalibrator.TryForwardFromSides(right, left, Vector3.up, 0.15f, out var forward, out float separation), Is.True, $"case {i}");
+                TestMath.AreClose(yaw * Vector3.forward, forward, 1e-4f, $"case {i}");
+                Assert.That(separation, Is.EqualTo(0.24f).Within(1e-4f));
+
+                var frame = new BodyFrameCalibrator();
+                frame.SetUp(Quaternion.identity, Vector3.up);
+                Assert.That(frame.TrySetForward(forward, 0.5f), Is.True);
+                TestMath.AreClose(new Vector3(1f, 0f, 0f), frame.ToBody(yaw * Vector3.right), 1e-4f, "体の右は右");
+            }
+        }
+
+        [Test]
+        public void ForwardFromSides_RejectsCloseOrStackedPoints()
+        {
+            Assert.That(BodyFrameCalibrator.TryForwardFromSides(new Vector3(0.05f, 0f, 0f), new Vector3(-0.05f, 0f, 0f), Vector3.up, 0.15f, out _, out _),
+                Is.False, "左右の間隔が短い");
+            Assert.That(BodyFrameCalibrator.TryForwardFromSides(new Vector3(0f, 0.3f, 0f), Vector3.zero, Vector3.up, 0.15f, out _, out _),
+                Is.False, "上下に並んでいるだけでは左右が決まらない");
+        }
+
+        [Test]
         public void ClearForward_ReturnsToTrackerAxes()
         {
             var frame = new BodyFrameCalibrator();

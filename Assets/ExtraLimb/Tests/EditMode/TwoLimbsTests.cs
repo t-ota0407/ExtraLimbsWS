@@ -161,10 +161,34 @@ namespace ExtraLimb.Tests.EditMode
             var direction = new Vector3(0f, 0f, 2f);
             const float radius = 0.01f;
 
-            var center = ReachTask.ExtraLimbProbeCenter(fingertip, direction, radius);
+            var center = ReachTask.FingertipProbeCenter(fingertip, direction, radius);
 
             TestMath.AreClose(new Vector3(0.1f, 1.2f, 0.49f), center, 1e-6f, "指の中（指先から半径だけ手前）");
             TestMath.AreClose(fingertip, center + direction.normalized * radius, 1e-6f, "球の前の端が指先");
+        }
+
+        [Test]
+        public void HandProbeCenter_IsAtNaturalFingertip_LikeExtraLimb()
+        {
+            var hand = new GameObject("RightHand").transform;
+            try
+            {
+                hand.position = new Vector3(0.3f, 1.1f, 0.3f);
+                var distal = new GameObject("RightHandMiddle3").transform;
+                distal.SetParent(hand, false);
+                distal.position = new Vector3(0.3f, 1.1f, 0.45f);
+                var tip = new GameObject("RightHandMiddle4").transform;
+                tip.SetParent(distal, false);
+                tip.position = new Vector3(0.3f, 1.1f, 0.47f);
+
+                var center = ReachTask.HandProbeCenter(hand, distal, 0.01f);
+                TestMath.AreClose(new Vector3(0.3f, 1.1f, 0.46f), center, 1e-6f, "見た目の中指の先から半径だけ手前（追加肢と同じ）");
+                TestMath.AreClose(hand.position, ReachTask.HandProbeCenter(hand, null, 0.01f), 1e-6f, "指の骨がなければ手首");
+            }
+            finally
+            {
+                Object.DestroyImmediate(hand.gameObject);
+            }
         }
     }
 }

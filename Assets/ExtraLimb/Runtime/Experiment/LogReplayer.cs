@@ -369,6 +369,13 @@ namespace ExtraLimb.Experiment
                 if (snapshot.heightCm > 0f && snapshot.shoulderWidthCm > 0f && body != null && body.IsReady
                     && (Mathf.Abs(body.Calibration.Height * 100f - snapshot.heightCm) > 0.05f || Mathf.Abs(body.Calibration.ShoulderWidth * 100f - snapshot.shoulderWidthCm) > 0.05f))
                     session.ApplyBodyDimensions(snapshot.heightCm, snapshot.shoulderWidthCm);
+                // 手の長さ（2026-11-13 より前の記録は 0。そのころは手を拡縮していなかったので、モデルの手の長さにする）
+                if (body != null && body.IsReady)
+                {
+                    float handCm = snapshot.handLengthCm > 0f ? snapshot.handLengthCm : body.UnscaledHandLength * 100f;
+                    handCm = Mathf.Clamp(handCm, BodyCalibration.MinHandLength * 100f, BodyCalibration.MaxHandLength * 100f);
+                    if (Mathf.Abs(body.Calibration.HandLength * 100f - handCm) > 0.05f) session.SetHandLength(handCm);
+                }
             }
         }
 

@@ -70,6 +70,10 @@ namespace ExtraLimb.Limb
         Vector3 tipDirectionLocal = Vector3.forward;
         Transform visibilityBone;
         Vector3 visibilityBoneScale = Vector3.one;
+        Vector3 handBaseScale = Vector3.one;
+        float handScale = 1f;
+        float handLength;
+        float handLocalLength;
         int lastSolveFrame = -1;
         bool initialized;
         bool mounted;
@@ -78,6 +82,27 @@ namespace ExtraLimb.Limb
 
         public LimbSide Side => side;
         public bool IsReady => initialized;
+
+        /// <summary>
+        /// 手の長さ（m。手首から見た目の中指の先＝触れる点 ContactPoint まで）。0 ならモデルの手のまま。
+        /// 手首の骨を拡縮するので、指先も手首の方へ寄る。腕の長さ（Reach）は変わらない。
+        /// LimbSession が体の寸法（BodyCalibration.HandLength）から入れる。アバターの大きさを変えたら入れ直す（2026-11-13）。
+        /// </summary>
+        public float HandLength
+        {
+            get => handLength;
+            set
+            {
+                handLength = Mathf.Max(0f, value);
+                ApplyHandScale();
+            }
+        }
+
+        /// <summary>手の骨にかけている拡縮率（モデルの手に対する比。HandLength から決まる）。</summary>
+        public float HandScale => handScale;
+
+        /// <summary>手の骨を拡縮しないときの手の長さ（m。今のアバターの大きさで）。</summary>
+        public float UnscaledHandLength => initialized && avatarRoot != null ? handLocalLength * Mathf.Abs(avatarRoot.lossyScale.x) : 0f;
 
         /// <summary>表示するか。false にすると鎖骨から先を小さくして隠す。</summary>
         public bool Visible
@@ -207,6 +232,14 @@ namespace ExtraLimb.Limb
             }
         }
 
+        void ApplyHandScale()
+        {
+            if (!initialized || hand == null) return;
+            float unscaled = UnscaledHandLength;
+            handScale = handLength > 0f && unscaled > 1e-5f ? handLength / unscaled : 1f;
+            hand.localScale = handBaseScale * handScale;
+        }
+
         void ApplyVisibility()
         {
             if (visibilityBone != null) visibilityBone.localScale = visible ? visibilityBoneScale : Vector3.one * HiddenScale;
@@ -268,8 +301,12 @@ namespace ExtraLimb.Limb
 
             visibilityBone = upperArm.parent != null ? upperArm.parent : upperArm;
             visibilityBoneScale = visibilityBone.localScale;
+            handBaseScale = hand.localScale;
+            // 手の長さは、手首から触れる点までを、アバターの根元の座標で覚える（隠すための縮小や手の拡縮の前に）
+            handLocalLength = avatarRoot.InverseTransformVector(hand.TransformPoint(tipLocal) - hand.position).magnitude;
             initialized = true;
             ApplyVisibility();
+            ApplyHandScale();
             return true;
         }
 

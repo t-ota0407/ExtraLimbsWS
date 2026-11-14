@@ -26,9 +26,14 @@ namespace ExtraLimb.Experiment
         /// <summary>パネルで設定している追加肢（right / left）。</summary>
         public string selected = "";
 
+        /// <summary>Re-center のときに左右のトラッカーから前の向きを求めるか（2026-11-13 から。それより前の記録は false）。</summary>
+        public bool autoForwardFromSides;
+
         /// <summary>参加者の身長・肩幅（cm）とアバターの拡縮。体の寸法を扱う部品がなければ0。</summary>
         public float heightCm;
         public float shoulderWidthCm;
+        /// <summary>手の長さ（cm。手首から中指の先まで。本来の手と追加肢の手。2026-11-13 から。それより前の記録は 0＝モデルの手のまま）。</summary>
+        public float handLengthCm;
         public float avatarScale;
 
         public LimbSnapshot[] limbs = Array.Empty<LimbSnapshot>();

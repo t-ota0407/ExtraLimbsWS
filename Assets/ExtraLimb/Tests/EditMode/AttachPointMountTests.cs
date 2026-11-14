@@ -214,6 +214,55 @@ namespace ExtraLimb.Tests.EditMode
             Assert.That(angle, Is.LessThan(0.5f), $"部位から見た根元の座標の向きのずれ {angle:F1}°");
         }
 
+        // 手首から見た目の中指の先（中指の第3関節の子）まで
+        float NaturalHandLength(bool left)
+        {
+            var hand = body.Animator.GetBoneTransform(left ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand);
+            var distal = body.Animator.GetBoneTransform(left ? HumanBodyBones.LeftMiddleDistal : HumanBodyBones.RightMiddleDistal);
+            return Vector3.Distance(hand.position, distal.GetChild(0).position);
+        }
+
+        [Test]
+        public void HandLength_SetsNaturalHandsToCentimeters_IndependentOfHeight()
+        {
+            const float Default = ExtraLimb.Core.BodyCalibration.DefaultHandLength;
+            Assert.That(body.UnscaledHandLength, Is.EqualTo(0.235f).Within(0.002f), "モデルの手は約23.5cm");
+            Assert.That(NaturalHandLength(false), Is.EqualTo(Default).Within(1e-3f), "始めは初期値の長さ");
+            Assert.That(NaturalHandLength(true), Is.EqualTo(Default).Within(1e-3f));
+
+            bool changed = false;
+            body.CalibrationChanged += () => changed = true;
+            Assert.That(body.SetHandLength(0.20f), Is.True);
+            Assert.That(changed, Is.True, "変えたことを知らせる（追加肢の手も同じ長さにする）");
+            Assert.That(NaturalHandLength(false), Is.EqualTo(0.20f).Within(1e-3f));
+            Assert.That(body.HandLength, Is.EqualTo(0.20f).Within(1e-3f));
+
+            Assert.That(body.ApplyBodyDimensions(1.6f, 0.36f, 0.17f), Is.True);
+            Assert.That(NaturalHandLength(false), Is.EqualTo(0.17f).Within(1e-3f), "アバターを縮めても、手は入れた長さ");
+            Assert.That(body.ApplyBodyDimensions(1.9f, 0.42f), Is.True);
+            Assert.That(NaturalHandLength(true), Is.EqualTo(0.17f).Within(1e-3f), "身長だけ変えても、手の長さは変わらない");
+
+            Assert.That(body.SetHandLength(0.30f), Is.False, "範囲外");
+            Assert.That(body.ApplyBodyDimensions(1.7f, 0.4f, 0.05f), Is.False, "どれかが範囲外なら何もしない");
+            Assert.That(body.Calibration.Height, Is.EqualTo(1.9f).Within(1e-6f));
+            Assert.That(NaturalHandLength(false), Is.EqualTo(0.17f).Within(1e-3f));
+
+            body.ResetBodyDimensions();
+            Assert.That(NaturalHandLength(false), Is.EqualTo(Default).Within(1e-3f), "初期値に戻す");
+        }
+
+        [Test]
+        public void HandLength_ExtraLimbHandMatchesNaturalHand()
+        {
+            var (rig, _) = CreateLimb(LimbSide.Right);
+            Assert.That(rig.UnscaledHandLength, Is.EqualTo(body.UnscaledHandLength).Within(0.002f), "追加肢の手も本来の手と同じモデル");
+
+            Assert.That(body.ApplyBodyDimensions(1.65f, 0.38f, 0.175f), Is.True);
+            rig.HandLength = body.Calibration.HandLength;
+            Assert.That(Vector3.Distance(rig.Hand.position, rig.ContactPoint), Is.EqualTo(0.175f).Within(1e-3f), "手首から触れる点まで");
+            Assert.That(NaturalHandLength(false), Is.EqualTo(0.175f).Within(1e-3f));
+        }
+
         [Test]
         public void BodyDimensions_ScaleAvatarAndAttachPoints()
         {

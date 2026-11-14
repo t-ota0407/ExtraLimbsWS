@@ -52,6 +52,9 @@ namespace ExtraLimb.Experiment
         public string StatusMessage { get; private set; } = "";
         public string ForwardMessage { get; private set; } = "";
 
+        /// <summary>前の向きをどこから得たか（「左右の膝から自動」「F で記録」「保存した向き」など。未記録なら空）。</summary>
+        public string ForwardSource { get; private set; } = "";
+
         /// <summary>入力の6つの値の、Re-center からの最小・最大があるか。</summary>
         public bool HasChannelRange { get; private set; }
 
@@ -187,6 +190,7 @@ namespace ExtraLimb.Experiment
                     owner.Raise(SessionEventTypes.Recenter, Subject, "input", "", InputId,
                         $"{Label}の追加肢：Re-center（基準 {ReferenceId}、入力 {InputId}）", ChangeOrigins.System);
                     if (loadForwardPending) LoadForward();
+                    ApplyForwardFromSides(referencePose);
                 }
                 else if (!wasInputValid)
                 {
@@ -233,6 +237,7 @@ namespace ExtraLimb.Experiment
                 Pipeline.Recenter(referencePose, inputPose);
             }
             if (!restoreHasForward || !Pipeline.BodyFrame.TrySetForward(restoreForward, 0.01f)) Pipeline.BodyFrame.ClearForward();
+            ForwardSource = Pipeline.BodyFrame.HasForward ? "記録から" : "";
             owner.Raise(SessionEventTypes.Recenter, Subject, "input", "", InputId,
                 $"{Label}の追加肢：記録の基準姿勢{(restoreRecentered ? "" : "（なし。今の姿勢）")}と前の向き{(restoreHasForward ? "" : "（なし）")}に合わせました", ChangeOrigins.Replay);
         }
@@ -245,7 +250,8 @@ namespace ExtraLimb.Experiment
             string previous = hadForward ? VectorText(Pipeline.BodyFrame.Forward) : "";
             if (Pipeline.TryRecordForward(referencePose, inputPose, owner.MinForwardGestureMeters))
             {
-                ForwardMessage = $"前の向きを記録しました（前へ出した距離 {horizontal.magnitude * 100f:F1} cm）";
+                ForwardMessage = $"前の向きを記録しました（前へ出した距離 {horizontal.magnitude * 100f:F1} cm。次の Re-center までこの向きを使います）";
+                ForwardSource = "F で記録";
                 owner.OnForwardRecorded(this);
                 Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {Pipeline.BodyFrame.Forward.ToString("F2")}");
                 owner.Raise(SessionEventTypes.Forward, Subject, ReferenceId, previous, VectorText(Pipeline.BodyFrame.Forward),
@@ -257,6 +263,31 @@ namespace ExtraLimb.Experiment
                 Debug.LogWarning($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}");
                 owner.Raise(SessionEventTypes.ForwardFailed, Subject, ReferenceId, "", "", $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
             }
+        }
+
+        // Re-center のときに、左右の同じ部位のトラッカーを結ぶ線から前の向きを求める（2026-11-13）。組がなければ今の前の向きのまま
+        void ApplyForwardFromSides(Pose referencePose)
+        {
+            if (!owner.AutoForwardFromSides) return;
+            if (!owner.TryForwardFromSides(ReferenceId, referencePose, Pipeline.BodyFrame.Up, out var forward, out string pair, out float separation))
+            {
+                ForwardMessage = Pipeline.BodyFrame.HasForward
+                    ? "左右の同じ部位のトラッカーがそろっていないため、前の向きはそのまま使っています"
+                    : "左右の同じ部位のトラッカーがそろっていません。前の向きを F で記録してください";
+                return;
+            }
+            bool hadForward = Pipeline.BodyFrame.HasForward;
+            var before = Pipeline.BodyFrame.Forward;
+            if (!Pipeline.BodyFrame.TrySetForward(forward, 0.5f)) return;
+            var after = Pipeline.BodyFrame.Forward;
+            float change = hadForward ? Vector3.Angle(before, after) : 0f;
+            ForwardSource = $"左右の{pair}から自動";
+            ForwardMessage = $"左右の{pair}のトラッカーから前の向きを求めました（左右の間隔 {separation * 100f:F0} cm" +
+                             (hadForward ? $"、前回から {change:F1}°）" : "）");
+            owner.SaveForward(this);
+            Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {after.ToString("F2")}");
+            owner.Raise(SessionEventTypes.Forward, Subject, ReferenceId, hadForward ? VectorText(before) : "", VectorText(after),
+                $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
         }
 
         void AutoSelect(TrackerRegistry registry)
@@ -287,9 +318,15 @@ namespace ExtraLimb.Experiment
             Pipeline.BodyFrame.ClearForward();
             var bindings = owner.Bindings;
             if (bindings != null && bindings.TryGetForward(ReferenceId, out var forward) && Pipeline.BodyFrame.TrySetForward(forward, 0.01f))
+            {
                 ForwardMessage = "保存した前の向きを使っています";
+                ForwardSource = "保存した向き";
+            }
             else
+            {
                 ForwardMessage = "";
+                ForwardSource = "";
+            }
         }
 
         bool TryGetPoses(TrackerRegistry registry, out Pose referencePose, out Pose inputPose)

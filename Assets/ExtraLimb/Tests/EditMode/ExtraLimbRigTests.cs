@@ -180,6 +180,40 @@ namespace ExtraLimb.Tests.EditMode
             TestMath.AreClose(hand.position + forearmDirection * 0.18f, rig.ContactPoint, 1e-3f, "手の向きは前腕の延長");
         }
 
+        [Test]
+        public void HandLength_MovesFingertipTowardWrist_AndKeepsArmLength()
+        {
+            var rig = CreateRig(LimbSide.Right, withFingerBones: true);
+            float reach = rig.Reach;
+            Assert.That(rig.UnscaledHandLength, Is.EqualTo(0.14f).Within(1e-4f), "手首から見た目の指先まで");
+            rig.HandLength = 0.07f;
+            rig.SolveLocal(rig.RestHandPosition);
+
+            var forearmDirection = (hand.position - forearm.position).normalized;
+            TestMath.AreClose(hand.position + forearmDirection * 0.07f, rig.ContactPoint, 1e-3f, "手首から指先までが入れた長さ");
+            Assert.That(rig.Reach, Is.EqualTo(reach).Within(1e-4f), "腕の長さは変わらない");
+            Assert.That(hand.localScale.x, Is.EqualTo(0.5f).Within(1e-4f));
+            Assert.That(rig.HandScale, Is.EqualTo(0.5f).Within(1e-4f));
+
+            rig.HandLength = 0f;
+            Assert.That(hand.localScale.x, Is.EqualTo(1f).Within(1e-4f), "0 ならモデルの手のまま");
+        }
+
+        [Test]
+        public void HandLength_KeepsLength_WhenAvatarIsScaled()
+        {
+            var rig = CreateRig(LimbSide.Right, withFingerBones: true);
+            root.transform.localScale = Vector3.one * 2f;
+            rig.Visible = false;
+            rig.HandLength = 0.07f;  // 隠している（鎖骨から先を縮めている）ときに入れても長さを測り違えない
+            rig.Visible = true;
+            rig.SolveLocal(rig.RestHandPosition);
+
+            Assert.That(rig.UnscaledHandLength, Is.EqualTo(0.28f).Within(1e-4f), "アバターを2倍にすると、拡縮しない手も2倍");
+            Assert.That(Vector3.Distance(hand.position, rig.ContactPoint), Is.EqualTo(0.07f).Within(1e-3f), "アバターを拡縮しても、手は入れた長さ");
+            Assert.That(hand.localScale.x, Is.EqualTo(0.25f).Within(1e-4f));
+        }
+
         [TestCase(LimbSide.Right)]
         [TestCase(LimbSide.Left)]
         public void ContactPoint_IsMiddle4Root_NotBoneEnd(LimbSide side)

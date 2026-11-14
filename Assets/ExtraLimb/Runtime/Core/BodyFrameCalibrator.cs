@@ -8,7 +8,8 @@ namespace ExtraLimb.Core
     /// 「足を前に出したのに手先が横へ動く」ことが起きる。これを次の2つで直す。
     /// <list type="bullet">
     /// <item>上：Re-center時の重力の向き。SteamVR（Raw）・Quest・仮想トラッカーの空間はどれも +Y が上。</item>
-    /// <item>前：「前を記録」で、入力の部位を前へ出したときの変位の水平成分。記録するまでは、トラッカーの軸で代用する。</item>
+    /// <item>前：「前を記録」で、入力の部位を前へ出したときの変位の水平成分。記録するまでは、トラッカーの軸で代用する。
+    /// 左右の同じ部位にトラッカーがあれば、Re-center のときに左右を結ぶ線から求めることもできる（TryForwardFromSides。2026-11-13）。</item>
     /// </list>
     /// 腰トラッカーは体に固定されているので、一度求めた軸は、体の向きを変えても前かがみになってもそのまま使える。
     /// </summary>
@@ -61,6 +62,21 @@ namespace ExtraLimb.Core
             recordedForward = horizontal.normalized;
             HasForward = true;
             Rebuild();
+            return true;
+        }
+
+        /// <summary>
+        /// 左右の同じ部位の2点（基準の座標）から体の前を求める。右の点から見た左の点の向きを水平にしたものが体の左右で、
+        /// 前はそれと上に直角な向き（上から見て、左右の線を時計回りに90°回した向き）。水平の間隔が minSeparation（m）より短ければ false。
+        /// </summary>
+        public static bool TryForwardFromSides(Vector3 rightPoint, Vector3 leftPoint, Vector3 up, float minSeparation, out Vector3 forward, out float separation)
+        {
+            forward = Vector3.zero;
+            var vertical = up.sqrMagnitude > 1e-12f ? up.normalized : Vector3.up;
+            var across = Vector3.ProjectOnPlane(rightPoint - leftPoint, vertical);
+            separation = across.magnitude;
+            if (separation < Mathf.Max(minSeparation, 1e-6f)) return false;
+            forward = Vector3.Cross(across / separation, vertical).normalized;
             return true;
         }
 

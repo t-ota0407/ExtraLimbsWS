@@ -49,6 +49,14 @@ namespace ExtraLimb.Experiment
         [SerializeField] Color idleColor = new Color(0.42f, 0.45f, 0.5f);
         [SerializeField] Color litColor = new Color(1f, 0.82f, 0.12f);
         [SerializeField] Color hitColor = new Color(0.3f, 1f, 0.45f);
+        [Tooltip("当たる範囲（効果器の球）を半透明で見せる。参加者（HMD）にも見える。切り替えは ShowProbes")]
+        [SerializeField] bool showProbes = true;
+
+        // 当たる範囲の色（シーンに保存しない。保存すると、コードで色を変えても開いているシーンの古い値が使われるため）
+        // 桃色：アバターの水色と、ターゲットの灰・黄・緑と見分けられる色。追加肢も本来の手も同じ指先の球なので同じ色
+        static readonly Color ProbeColor = new Color(1f, 0.36f, 0.78f, 0.9f);
+        // 球の中の濃さ（縁に対する比）。小さいので濃く
+        const float ProbeCenterAlpha = 0.75f;
 
         readonly ReachJudge judge = new ReachJudge();
         readonly List<EffectorProbe> probes = new List<EffectorProbe>();
@@ -60,6 +68,9 @@ namespace ExtraLimb.Experiment
         Transform root;
         LineRenderer outline;
         Material outlineMaterial;
+        Transform probeRoot;
+        readonly List<Transform> probeSpheres = new List<Transform>();
+        Material probeMaterial;
         BodyFrameProvider body;
         bool placeRequested;
         string reportedDirectory;
@@ -106,6 +117,20 @@ namespace ExtraLimb.Experiment
         /// <summary>最後のメッセージ（パネルに出す）。</summary>
         public string Message => message;
 
+        /// <summary>
+        /// 当たる範囲を見せるか（2026-11-13）。円を置いている間、追加肢と本来の手の指先の球（半径 probeRadius）を、
+        /// 判定と同じ位置と大きさで半透明に描く。前半（追加肢だけ）は本来の手の球を出さない。
+        /// </summary>
+        public bool ShowProbes
+        {
+            get => showProbes;
+            set
+            {
+                showProbes = value;
+                UpdateProbeVisuals();
+            }
+        }
+
         /// <summary>課題をしていない間もターゲットの位置を見せるか。</summary>
         public bool ShowIdleTargets
         {
@@ -141,6 +166,8 @@ namespace ExtraLimb.Experiment
             if (root != null) Destroy(root.gameObject);
             foreach (var material in materials) Destroy(material);
             if (outlineMaterial != null) Destroy(outlineMaterial);
+            if (probeRoot != null) Destroy(probeRoot.gameObject);
+            if (probeMaterial != null) Destroy(probeMaterial);
         }
 
         void OnSessionEvent(SessionEvent e)
@@ -313,16 +340,28 @@ namespace ExtraLimb.Experiment
                 }
             }
             UpdateColors();
+            UpdateProbeVisuals();
         }
 
         /// <summary>
-        /// 追加肢の効果器の球の中心：見た目の指先から、指の付け根の向きへ半径だけ戻った点。球の先端が指先にそろうので、
-        /// 指先がターゲットの表面に触れたときに触れたとする（2026-11-13。それまでは指先より約4cm先の骨の端を中心にしていた）。
+        /// 効果器の球の中心：見た目の指先から、指の付け根の向きへ半径だけ戻った点。球の先端が指先にそろうので、
+        /// 指先がターゲットの表面に触れたときに触れたとする（2026-11-13。追加肢は、それまで指先より約4cm先の骨の端を中心にしていた）。
         /// </summary>
-        public static Vector3 ExtraLimbProbeCenter(Vector3 fingertip, Vector3 fingerDirection, float radius) =>
+        public static Vector3 FingertipProbeCenter(Vector3 fingertip, Vector3 fingerDirection, float radius) =>
             fingertip - fingerDirection.normalized * radius;
 
-        // 効果器：追加肢の指先（右を先に）、本来の手の手のひらの点（手首と中指の付け根の間）
+        /// <summary>
+        /// 本来の手の効果器の球の中心：中指の第3関節（middleDistal）の子を見た目の指先とし、第3関節から指先への向きで FingertipProbeCenter と同じにする。
+        /// 指の骨がなければ手首（2026-11-13。それまでは手のひらの点に半径 4 cm）。
+        /// </summary>
+        public static Vector3 HandProbeCenter(Transform hand, Transform middleDistal, float radius)
+        {
+            if (middleDistal == null || middleDistal.childCount == 0) return hand.position;
+            var tip = middleDistal.GetChild(0).position;
+            return FingertipProbeCenter(tip, tip - middleDistal.position, radius);
+        }
+
+        // 効果器：追加肢の指先（右を先に）、本来の手の指先。どちらも見た目の中指の先を先端とする同じ大きさの球
         void CollectProbes()
         {
             probes.Clear();
@@ -333,24 +372,23 @@ namespace ExtraLimb.Experiment
                     var limb = channel.Limb;
                     if (!channel.Active || limb == null || !limb.IsReady || !limb.Visible) continue;
                     var kind = limb.Side == LimbSide.Left ? EffectorKind.ExtraLeft : EffectorKind.ExtraRight;
-                    probes.Add(new EffectorProbe(kind, true, ExtraLimbProbeCenter(limb.ContactPoint, limb.ContactDirection, layout.extraLimbProbeRadius),
-                        layout.extraLimbProbeRadius));
+                    probes.Add(new EffectorProbe(kind, true, FingertipProbeCenter(limb.ContactPoint, limb.ContactDirection, layout.probeRadius),
+                        layout.probeRadius));
                 }
             }
             HookBody();
             var animator = body != null ? body.Animator : null;
             if (animator == null) return;
-            AddHand(animator, HumanBodyBones.LeftHand, HumanBodyBones.LeftMiddleProximal, EffectorKind.HandLeft);
-            AddHand(animator, HumanBodyBones.RightHand, HumanBodyBones.RightMiddleProximal, EffectorKind.HandRight);
+            AddHand(animator, HumanBodyBones.LeftHand, HumanBodyBones.LeftMiddleDistal, EffectorKind.HandLeft);
+            AddHand(animator, HumanBodyBones.RightHand, HumanBodyBones.RightMiddleDistal, EffectorKind.HandRight);
         }
 
-        void AddHand(Animator animator, HumanBodyBones handBone, HumanBodyBones palmBone, EffectorKind kind)
+        void AddHand(Animator animator, HumanBodyBones handBone, HumanBodyBones middleDistalBone, EffectorKind kind)
         {
             var hand = animator.GetBoneTransform(handBone);
             if (hand == null) return;
-            var palm = animator.GetBoneTransform(palmBone);
-            var point = palm != null ? Vector3.Lerp(hand.position, palm.position, 0.7f) : hand.position;
-            probes.Add(new EffectorProbe(kind, true, point, layout.handProbeRadius));
+            var center = HandProbeCenter(hand, animator.GetBoneTransform(middleDistalBone), layout.probeRadius);
+            probes.Add(new EffectorProbe(kind, true, center, layout.probeRadius));
         }
 
         string SeedText(int segmentNumber)
@@ -466,6 +504,75 @@ namespace ExtraLimb.Experiment
                 var color = flashing && k == flashIndex ? hitColor : k == lit && IsRunning ? litColor : idleColor;
                 SetColor(materials[k], color);
             }
+        }
+
+        // 当たる範囲：判定に使う効果器の球を、同じ位置と大きさで描く。指先の球は半分が指の中にあるので、手や指に隠れないように手前に描く
+        void UpdateProbeVisuals()
+        {
+            bool show = showProbes && placed && layout != null;
+            if (!show)
+            {
+                if (probeRoot != null) probeRoot.gameObject.SetActive(false);
+                return;
+            }
+            CollectProbes();
+            if (probeRoot == null)
+            {
+                probeRoot = new GameObject("ReachProbes").transform;
+                probeMaterial = CreateOverlayMaterial(ProbeColor, ProbeCenterAlpha);
+            }
+            probeRoot.gameObject.SetActive(true);
+            while (probeSpheres.Count < probes.Count)
+            {
+                var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                sphere.name = $"ReachProbe_{probeSpheres.Count + 1}";
+                Destroy(sphere.GetComponent<Collider>());
+                sphere.transform.SetParent(probeRoot, false);
+                var renderer = sphere.GetComponent<Renderer>();
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                probeSpheres.Add(sphere.transform);
+            }
+            for (int i = 0; i < probeSpheres.Count; i++)
+            {
+                bool used = i < probes.Count;
+                var probe = used ? probes[i] : default;
+                bool hand = used && (probe.kind == EffectorKind.HandLeft || probe.kind == EffectorKind.HandRight);
+                // 前半（追加肢だけ）は本来の手では数えないので、手の球は出さない
+                bool visible = used && !(hand && segment == 1);
+                probeSpheres[i].gameObject.SetActive(visible);
+                if (!visible) continue;
+                probeSpheres[i].position = probe.point;
+                probeSpheres[i].localScale = Vector3.one * (probe.radius * 2f);
+                probeSpheres[i].GetComponent<Renderer>().sharedMaterial = probeMaterial;
+            }
+        }
+
+        // 手前に描く半透明（Shaders/Resources/ExtraLimbOverlayUnlit）。見つからなければ URP の Unlit を半透明にする（指の中は隠れる）
+        static Material CreateOverlayMaterial(Color color, float centerAlpha)
+        {
+            var overlay = Shader.Find("ExtraLimb/OverlayUnlit");
+            if (overlay != null)
+            {
+                var onTop = new Material(overlay) { name = "ReachProbe" };
+                SetColor(onTop, color);
+                onTop.SetFloat("_CenterAlpha", Mathf.Clamp01(centerAlpha));
+                return onTop;
+            }
+            var shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            var material = new Material(shader) { name = "ReachProbe" };
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+            if (material.HasProperty("_SrcBlend")) material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            if (material.HasProperty("_DstBlend")) material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_SrcBlendAlpha")) material.SetFloat("_SrcBlendAlpha", (float)UnityEngine.Rendering.BlendMode.One);
+            if (material.HasProperty("_DstBlendAlpha")) material.SetFloat("_DstBlendAlpha", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite", 0f);
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Overlay;
+            SetColor(material, color);
+            return material;
         }
 
         static void SetColor(Material material, Color color)

@@ -87,7 +87,7 @@ namespace ExtraLimb.UI
         Button demoModeButton, experimentModeButton;
 
         // 参加者
-        TextField participantField, rowField, heightField, shoulderField;
+        TextField participantField, rowField, heightField, shoulderField, handLengthField;
         Label planLabel, designLabel, trackerPlanLabel, participantMessage, bodyMessage;
         Button createPlanButton;
         VisualElement idRow;
@@ -117,7 +117,7 @@ namespace ExtraLimb.UI
         Foldout reachSection;
         Label reachRingLabel, reachReachableLabel, reachLiveLabel, reachMessageLabel;
         Button reachPlaceButton;
-        Toggle reachIdleToggle, practiceVisibleToggle;
+        Toggle reachIdleToggle, reachProbesToggle, practiceVisibleToggle;
 
         // 追加肢
         Foldout limbSection;
@@ -147,7 +147,7 @@ namespace ExtraLimb.UI
         Button recordButton;
 
         // 表示・HMD へのメッセージ
-        Toggle markerToggle, mirrorToggle, overlayToggle, overlayHmdToggle;
+        Toggle markerToggle, mirrorToggle, overlayToggle, overlayHmdToggle, autoForwardToggle;
         Label viewLabel, noticeLabel;
         TextField noticeField;
 
@@ -363,12 +363,18 @@ namespace ExtraLimb.UI
             Text("肩幅", "el-field-label", bodyRow);
             shoulderField = Field(bodyRow, 52);
             Text("cm", "el-unit", bodyRow);
-            Btn(bodyRow, "反映", ApplyBodyDimensions);
-            Btn(bodyRow, "初期値", () =>
+            // 手の長さ（手首のしわから中指の先まで。本来の手と追加肢の手の両方。2026-11-13）
+            var handRow = Row(section);
+            Text("手の長さ", "el-field-label", handRow);
+            handLengthField = Field(handRow, 52);
+            Text("cm", "el-unit", handRow);
+            Btn(handRow, "反映", ApplyBodyDimensions);
+            Btn(handRow, "初期値", () =>
             {
                 session.ResetBodyDimensions();
                 FillBodyFields();
             });
+            Text("手の長さは手首のしわから中指の先まで（本来の手と追加肢の手に使う）", "el-muted", section);
             bodyMessage = Text("", "el-muted", section);
             FillBodyFields();
         }
@@ -525,6 +531,12 @@ namespace ExtraLimb.UI
             reachMessageLabel = Text("", "el-muted", reachSection);
             var row = Row(reachSection);
             reachPlaceButton = Btn(row, "今の姿勢で円を置き直す", () => reach.Place());
+            reachProbesToggle = AddToggle(reachSection, "当たる範囲を表示（追加肢と本来の手の指先の球。参加者にも見える）", value => Act(() =>
+            {
+                reach.ShowProbes = value;
+                session.Report(SessionEventTypes.ReachProbes, "session", "show", value ? "0" : "1", value ? "1" : "0",
+                    value ? "当たる範囲を表示しました" : "当たる範囲を隠しました");
+            }));
             reachIdleToggle = AddToggle(reachSection, "課題中以外もターゲットを表示", value => reach.ShowIdleTargets = value);
             if (practice != null) practiceVisibleToggle = AddToggle(reachSection, "動作確認用のボタンと立方体を表示", value => practice.Visible = value);
         }
@@ -617,6 +629,7 @@ namespace ExtraLimb.UI
             forwardLabel.style.flexGrow = 1;
             forwardLabel.style.flexShrink = 1;
             Btn(forward, Key("前の向きを記録", "F"), () => session.RequestRecordForward());
+            autoForwardToggle = AddToggle(limbSection, "Re-center のときに左右のトラッカーから前の向きを求める", value => Act(() => session.AutoForwardFromSides = value));
             forwardMessage = Text("", "el-muted", limbSection);
         }
 
@@ -824,12 +837,13 @@ namespace ExtraLimb.UI
             if (body == null || !body.IsReady || heightField == null) return;
             heightField.SetValueWithoutNotify((body.Calibration.Height * 100f).ToString("F0", CultureInfo.InvariantCulture));
             shoulderField.SetValueWithoutNotify((body.Calibration.ShoulderWidth * 100f).ToString("F0", CultureInfo.InvariantCulture));
+            handLengthField.SetValueWithoutNotify((body.Calibration.HandLength * 100f).ToString("0.#", CultureInfo.InvariantCulture));
         }
 
         void ApplyBodyDimensions()
         {
-            if (TryParse(heightField.value, out float height) && TryParse(shoulderField.value, out float shoulder))
-                session.ApplyBodyDimensions(height, shoulder);
+            if (TryParse(heightField.value, out float height) && TryParse(shoulderField.value, out float shoulder) && TryParse(handLengthField.value, out float hand))
+                session.ApplyBodyDimensions(height, shoulder, hand);
             else
                 bodyMessage.text = "数字を入れてください";
         }
@@ -1344,6 +1358,7 @@ namespace ExtraLimb.UI
         {
             if (reach == null || reachSection == null) return;
             reachIdleToggle?.SetValueWithoutNotify(reach.ShowIdleTargets);
+            reachProbesToggle?.SetValueWithoutNotify(reach.ShowProbes);
             if (practice != null) practiceVisibleToggle?.SetValueWithoutNotify(practice.Visible);
             reachPlaceButton.SetEnabled(!reach.IsRunning);
             if (!reachSection.value) return;
@@ -1450,11 +1465,15 @@ namespace ExtraLimb.UI
             SetText(gainLabel, $"ゲイン {config.positionGain:F1}");
 
             bool hasForward = channel.Pipeline.BodyFrame.HasForward;
-            SetText(forwardLabel, hasForward ? "前の向き：記録済み" : "前の向き：未記録");
+            SetText(forwardLabel, hasForward ? $"前の向き：{(channel.ForwardSource.Length > 0 ? channel.ForwardSource : "記録済み")}" : "前の向き：未記録");
             forwardLabel.EnableInClassList("el-caution", !hasForward);
             forwardLabel.EnableInClassList("el-ok", hasForward);
+            autoForwardToggle?.SetValueWithoutNotify(session.AutoForwardFromSides);
             string forwardText = channel.ForwardMessage;
-            if (!hasForward && forwardText.Length == 0) forwardText = "入力の部位を前へ出してから記録してください";
+            if (!hasForward && forwardText.Length == 0)
+                forwardText = session.AutoForwardFromSides
+                    ? "左右の同じ部位にトラッカーを付けると、Re-center のときに前の向きを求めます（F で記録もできます）"
+                    : "入力の部位を前へ出してから記録してください";
             ShowText(forwardMessage, forwardText);
         }
 

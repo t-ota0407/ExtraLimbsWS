@@ -149,6 +149,9 @@ namespace ExtraLimb.Experiment
         /// </summary>
         public const string ReachRing = "reach_ring";
 
+        /// <summary>当たる範囲（効果器の球）を見せるかの切り替え（key＝show、new＝1/0。2026-11-13）。</summary>
+        public const string ReachProbes = "reach_probes";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }

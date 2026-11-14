@@ -67,6 +67,10 @@ namespace ExtraLimb.Experiment
         [Header("前を記録")]
         [Tooltip("前を記録するのに必要な、水平の変位（cm）")]
         [SerializeField] float minForwardGestureCm = 5f;
+        [Tooltip("Re-center のときに、左右の同じ部位のトラッカーを結ぶ線から前の向きを求める（2026-11-13）。組がなければ保存した前の向きのまま")]
+        [SerializeField] bool autoForwardFromSides = true;
+        [Tooltip("左右のトラッカーの水平の間隔がこれ（cm）より短ければ、その組は使わない")]
+        [SerializeField] float minSideSeparationCm = 15f;
 
         [Header("表示")]
         [Tooltip("手首のIKターゲットの目印（右は水色、左は桃色の球）を出すか")]
@@ -154,6 +158,56 @@ namespace ExtraLimb.Experiment
         }
 
         internal float MinForwardGestureMeters => minForwardGestureCm * 0.01f;
+
+        /// <summary>
+        /// 前の向きを左右のトラッカーから求める組の優先順（右の部位で書く。左はその鏡）。肩は胴の向きそのもの。膝は座ると太ももが前を向く。
+        /// 足首は足の置き方で、肘は腕の置き方でずれやすいので後にする。
+        /// </summary>
+        static readonly BodySite[] ForwardPairPriority = { BodySite.RightShoulder, BodySite.RightKnee, BodySite.RightAnkle, BodySite.RightElbow };
+
+        /// <summary>Re-center のときに、左右の同じ部位のトラッカーを結ぶ線から前の向きを求めるか。</summary>
+        public bool AutoForwardFromSides
+        {
+            get => autoForwardFromSides;
+            set
+            {
+                if (autoForwardFromSides == value) return;
+                autoForwardFromSides = value;
+                Raise(SessionEventTypes.Config, "session", "auto_forward", Bool(!value), Bool(value),
+                    value ? "Re-center のときに左右のトラッカーから前の向きを求めます" : "前の向きを左右のトラッカーから求めるのをやめました（F で記録した向きを使います）");
+                Revise(SessionEventTypes.Config);
+            }
+        }
+
+        /// <summary>
+        /// 左右の同じ部位のトラッカー（基準と同じ空間で、両方追跡できているもの）を ForwardPairPriority の順に探し、
+        /// 結ぶ線から前の向き（基準の座標）を求める。見つからなければ false。pairName は部位の名前（「膝」など）。
+        /// </summary>
+        internal bool TryForwardFromSides(string referenceId, Pose referencePose, Vector3 up, out Vector3 forward, out string pairName, out float separation)
+        {
+            forward = Vector3.zero;
+            pairName = "";
+            separation = 0f;
+            if (registry == null || !registry.TryGet(referenceId, out var reference)) return false;
+            foreach (var rightSite in ForwardPairPriority)
+            {
+                var right = registry.FindBySite(rightSite, reference.Space);
+                var left = registry.FindBySite(BodySites.Mirror(rightSite), reference.Space);
+                if (right == null || left == null || !right.TryGetPose(out var rightPose) || !left.TryGetPose(out var leftPose)) continue;
+                var rightPoint = NeutralPoseCalibrator.ToReferenceLocal(referencePose, rightPose).position;
+                var leftPoint = NeutralPoseCalibrator.ToReferenceLocal(referencePose, leftPose).position;
+                if (!BodyFrameCalibrator.TryForwardFromSides(rightPoint, leftPoint, up, minSideSeparationCm * 0.01f, out forward, out separation)) continue;
+                pairName = BodySiteNames.Kind(rightSite);
+                return true;
+            }
+            return false;
+        }
+
+        // 左右のトラッカーから求めた前の向きを保存する（組が使えなくなったときに使う）
+        internal void SaveForward(LimbChannel source)
+        {
+            if (bindings != null) bindings.SaveForward(source.ReferenceId, source.Pipeline.BodyFrame.Forward);
+        }
 
         /// <summary>使えるマッピングの型（全部位）。</summary>
         public IReadOnlyList<MappingPreset> MappingPresetList => mappingPresets;
@@ -275,6 +329,15 @@ namespace ExtraLimb.Experiment
 
             body = right.Mount != null ? right.Mount.Registry.Body : FindFirstObjectByType<BodyFrameProvider>();
             if (body != null) body.CalibrationChanged += OnCalibrationChanged;
+            ApplyHandLengthToLimbs();
+        }
+
+        // 追加肢の手を、本来の手と同じ長さにする（アバターの大きさが変わったときも入れ直す）
+        void ApplyHandLengthToLimbs()
+        {
+            if (body == null || !body.IsReady) return;
+            foreach (var channel in channels)
+                if (channel.Limb != null) channel.Limb.HandLength = body.Calibration.HandLength;
         }
 
         LimbChannel AddChannel(ExtraLimbRig rig, LimbRuntimeConfig channelConfig)
@@ -296,6 +359,7 @@ namespace ExtraLimb.Experiment
 
         void OnCalibrationChanged()
         {
+            ApplyHandLengthToLimbs();
             foreach (var channel in channels) channel.OnGeometryChanged();
         }
 
@@ -519,41 +583,72 @@ namespace ExtraLimb.Experiment
             Apply(channel, next);
         }
 
-        /// <summary>参加者の身長・肩幅（cm）を入れて、アバターと Attach Point を拡縮する。</summary>
+        /// <summary>参加者の身長・肩幅（cm）を入れて、アバターと Attach Point を拡縮する（手の長さはそのまま）。</summary>
         public bool ApplyBodyDimensions(float heightCm, float shoulderWidthCm)
         {
+            if (body == null || !body.IsReady) return false;
+            return ApplyBodyDimensions(heightCm, shoulderWidthCm, body.Calibration.HandLength * 100f);
+        }
+
+        /// <summary>参加者の身長・肩幅・手の長さ（cm）を入れて、アバターと Attach Point、本来の手と追加肢の手を拡縮する。</summary>
+        public bool ApplyBodyDimensions(float heightCm, float shoulderWidthCm, float handLengthCm)
+        {
             if (body == null) return false;
-            float oldHeight = body.Calibration.Height * 100f, oldShoulder = body.Calibration.ShoulderWidth * 100f;
-            bool ok = body.ApplyBodyDimensions(heightCm * 0.01f, shoulderWidthCm * 0.01f);
+            var old = BodyValuesCm();
+            bool ok = body.ApplyBodyDimensions(heightCm * 0.01f, shoulderWidthCm * 0.01f, RoundHandCm(handLengthCm) * 0.01f);
             bodyMessage = ok
                 ? $"反映しました（アバターの拡縮 {body.Calibration.AvatarScale:F2}）"
-                : $"範囲外です（身長 {BodyCalibration.MinHeight * 100f:F0}〜{BodyCalibration.MaxHeight * 100f:F0} cm、肩幅 {BodyCalibration.MinShoulderWidth * 100f:F0}〜{BodyCalibration.MaxShoulderWidth * 100f:F0} cm）";
-            if (ok) RaiseBodyChange(oldHeight, oldShoulder);
+                : $"範囲外です（身長 {BodyCalibration.MinHeight * 100f:F0}〜{BodyCalibration.MaxHeight * 100f:F0} cm、肩幅 {BodyCalibration.MinShoulderWidth * 100f:F0}〜{BodyCalibration.MaxShoulderWidth * 100f:F0} cm、" +
+                  $"手の長さ {BodyCalibration.MinHandLength * 100f:F0}〜{BodyCalibration.MaxHandLength * 100f:F0} cm）";
+            if (ok) RaiseBodyChange(old);
             return ok;
         }
 
-        /// <summary>身長・肩幅をモデルの大きさに戻す。</summary>
+        /// <summary>身長・肩幅をモデルの大きさに、手の長さを初期値に戻す。</summary>
         public void ResetBodyDimensions()
         {
             if (body == null) return;
-            float oldHeight = body.Calibration.Height * 100f, oldShoulder = body.Calibration.ShoulderWidth * 100f;
+            var old = BodyValuesCm();
             body.ResetBodyDimensions();
             bodyMessage = "モデルの大きさに戻しました";
-            RaiseBodyChange(oldHeight, oldShoulder);
+            RaiseBodyChange(old);
         }
 
-        void RaiseBodyChange(float oldHeightCm, float oldShoulderCm)
+        /// <summary>手の長さ（cm。手首から中指の先まで。本来の手と追加肢の手の両方）を変える。範囲外なら false。</summary>
+        public bool SetHandLength(float handLengthCm)
+        {
+            if (body == null) return false;
+            var old = BodyValuesCm();
+            bool ok = body.SetHandLength(RoundHandCm(handLengthCm) * 0.01f);
+            bodyMessage = ok ? "" : $"手の長さは {BodyCalibration.MinHandLength * 100f:F0}〜{BodyCalibration.MaxHandLength * 100f:F0} cm にしてください";
+            if (ok) RaiseBodyChange(old);
+            return ok;
+        }
+
+        // 手の長さは 0.1 cm 単位にする
+        static float RoundHandCm(float cm) => Mathf.Round(cm * 10f) / 10f;
+
+        (float height, float shoulder, float hand) BodyValuesCm() =>
+            (body.Calibration.Height * 100f, body.Calibration.ShoulderWidth * 100f, body.Calibration.HandLength * 100f);
+
+        void RaiseBodyChange((float height, float shoulder, float hand) old)
         {
             float height = body.Calibration.Height * 100f, shoulder = body.Calibration.ShoulderWidth * 100f;
             bool changed = false;
-            if (!Mathf.Approximately(oldHeightCm, height))
+            float hand = body.Calibration.HandLength * 100f;
+            if (!Mathf.Approximately(old.hand, hand))
             {
-                Raise(SessionEventTypes.Body, "session", "height_cm", Number(oldHeightCm), Number(height), $"身長を {height:F1} cm に（アバターの拡縮 {body.Calibration.AvatarScale:F3}）");
+                Raise(SessionEventTypes.Body, "session", "hand_length_cm", Number(old.hand), Number(hand), $"手の長さを {hand:F1} cm に");
                 changed = true;
             }
-            if (!Mathf.Approximately(oldShoulderCm, shoulder))
+            if (!Mathf.Approximately(old.height, height))
             {
-                Raise(SessionEventTypes.Body, "session", "shoulder_width_cm", Number(oldShoulderCm), Number(shoulder), $"肩幅を {shoulder:F1} cm に");
+                Raise(SessionEventTypes.Body, "session", "height_cm", Number(old.height), Number(height), $"身長を {height:F1} cm に（アバターの拡縮 {body.Calibration.AvatarScale:F3}）");
+                changed = true;
+            }
+            if (!Mathf.Approximately(old.shoulder, shoulder))
+            {
+                Raise(SessionEventTypes.Body, "session", "shoulder_width_cm", Number(old.shoulder), Number(shoulder), $"肩幅を {shoulder:F1} cm に");
                 changed = true;
             }
             if (changed) Revise(SessionEventTypes.Body);
@@ -615,6 +710,7 @@ namespace ExtraLimb.Experiment
                 reason = reason ?? "",
                 twoLimbs = TwoLimbs,
                 selected = Selected?.Subject ?? "",
+                autoForwardFromSides = autoForwardFromSides,
                 limbs = new LimbSnapshot[channels.Count],
             };
             if (body != null && body.IsReady)
@@ -622,6 +718,7 @@ namespace ExtraLimb.Experiment
                 snapshot.heightCm = body.Calibration.Height * 100f;
                 snapshot.shoulderWidthCm = body.Calibration.ShoulderWidth * 100f;
                 snapshot.avatarScale = body.Calibration.AvatarScale;
+                snapshot.handLengthCm = body.Calibration.HandLength * 100f;
             }
             for (int i = 0; i < channels.Count; i++)
             {
