@@ -88,7 +88,7 @@ namespace ExtraLimb.UI
 
         // 参加者
         TextField participantField, rowField, heightField, shoulderField, handLengthField;
-        Label planLabel, designLabel, trackerPlanLabel, participantMessage, bodyMessage;
+        Label planLabel, designLabel, trackerPlanLabel, checklistLabel, participantMessage, bodyMessage;
         Button createPlanButton;
         VisualElement idRow;
 
@@ -106,8 +106,8 @@ namespace ExtraLimb.UI
         Button startButton, abortButton, redoButton, prevButton, nextButton, practiceButton;
         readonly Label[] ratingLabels = new Label[3];
         readonly Button[,] ratingButtons = new Button[3, ConditionRating.Max];
-        Button recenterButton, trackerSwapButton;
-        Label trackerSwapLabel;
+        Button recenterButton, trackerCheckButton, trackerCheckSkipLeftButton, trackerCheckCancelButton;
+        Label trackerCheckLabel, trackerCheckList, startBlockedLabel, layoutWarningLabel, leftLimbNoteLabel;
         Foldout sequenceSection;
         VisualElement sequenceList;
         ConditionPlan listedPlan;
@@ -131,7 +131,7 @@ namespace ExtraLimb.UI
         VisualElement presetRow;
         readonly List<(Button button, MappingPreset preset)> presetButtons = new List<(Button, MappingPreset)>();
         BodySite? presetSite;
-        Label axesLabel, gainLabel, forwardLabel, forwardMessage, limbLockNote;
+        Label axesLabel, gainLabel, forwardLabel, forwardMessage, limbLayoutWarning, limbLockNote;
         readonly Toggle[] invertToggles = new Toggle[3];
         // 実験モードでは押せない（条件で決まる設定を変える）ボタン
         readonly List<VisualElement> lockables = new List<VisualElement>();
@@ -353,6 +353,8 @@ namespace ExtraLimb.UI
                 participantMessage = Text("", "el-caution", section);
                 planLabel = Text("", "el-muted", section);
                 trackerPlanLabel = Text("", "el-muted", section);
+                // 準備のチェックリスト（2026-11-15）：済んでいないものがあると開始できない
+                checklistLabel = Text("", null, section);
                 designLabel = Text("", "el-muted", section);
             }
 
@@ -481,22 +483,29 @@ namespace ExtraLimb.UI
             conditionInstruction = Text("", "el-muted", section);
             phaseLabel = Text("", "el-phase", section);
             recenterLabel = Text("", null, section);
+            layoutWarningLabel = Text("", "el-warn", section);
+            leftLimbNoteLabel = Text("", "el-caution", section);
+
+            // トラッカーの確認（装着の後と、後半のブロックの前の付け替えの後。2026-11-15）
+            trackerCheckLabel = Text("", "el-caution", section);
+            trackerCheckList = Text("", null, section);
+            var checkRow = Row(section);
+            trackerCheckButton = Btn(checkRow, "トラッカーの確認を始める", () => runner.StartTrackerCheck(), true);
+            trackerCheckSkipLeftButton = Btn(checkRow, "左はなし（右だけで行う）", () => runner.SkipLeftTrackers(), true);
+            trackerCheckCancelButton = Btn(checkRow, "確認をやめる", () => runner.CancelTrackerCheck(), true);
 
             var main = Row(section);
             recenterButton = Btn(main, Key("Re-center", "Space"), () => session.RequestRecenter(), true);
             startButton = Btn(main, Key("開始", "Enter"), () => runner.StartTrial(), true);
             abortButton = Btn(main, Key("中止", "Esc"), () => runner.Abort(), true);
             abortButton.AddToClassList("el-button--danger");
+            startBlockedLabel = Text("", "el-warn", section);
             var move = Row(section);
             prevButton = Btn(move, Key("前へ", "PgUp"), () => runner.Previous(), true);
             redoButton = Btn(move, Key("やり直し", "R"), () => runner.Redo(), true);
             nextButton = Btn(move, Key("次へ", "PgDn"), () => runner.Next(), true);
             var extra = Row(section);
             practiceButton = Btn(extra, "練習（記録上は条件に数えない）", () => runner.StartPractice(), true);
-            // トラッカーの付け替え（後半のブロックの前に一度）
-            trackerSwapLabel = Text("", "el-caution", section);
-            trackerSwapButton = Btn(section, "付け替えた（トラッカーの割り当てを更新）", () => runner.SwapTrackers());
-            trackerSwapButton.AddToClassList("el-button--block");
 
             var ratingHeader = SubHeader(section, "口頭評価", "1〜7 キーで上から順に入力");
             for (int item = 0; item < ratingLabels.Length; item++)
@@ -631,6 +640,7 @@ namespace ExtraLimb.UI
             Btn(forward, Key("前の向きを記録", "F"), () => session.RequestRecordForward());
             autoForwardToggle = AddToggle(limbSection, "Re-center のときに左右のトラッカーから前の向きを求める", value => Act(() => session.AutoForwardFromSides = value));
             forwardMessage = Text("", "el-muted", limbSection);
+            limbLayoutWarning = Text("", "el-warn", limbSection);
         }
 
         void BuildRecordSection(VisualElement parent)
@@ -1014,6 +1024,22 @@ namespace ExtraLimb.UI
             RefreshPractice();
         }
 
+        // トラッカーの確認の進み具合（済んだ部位はトラッカーの ID の末尾）
+        static string TrackerCheckListText(TrackerCheck check)
+        {
+            var parts = new List<string>();
+            for (int i = 0; i < check.Sites.Count; i++)
+            {
+                var site = check.Sites[i];
+                string name = BodySiteNames.Japanese(site);
+                if (check.TryGetFound(site, out string id)) parts.Add($"{name} 済（{ShortId(id)}）");
+                else if (check.IsSkipped(site)) parts.Add($"{name} なし");
+                else if (i == check.Index) parts.Add($"{name} ← 今");
+                else parts.Add($"{name} まだ");
+            }
+            return string.Join("　", parts);
+        }
+
         // 「条件の進行」の欄の、今の段階
         string RunnerPhaseText()
         {
@@ -1021,7 +1047,9 @@ namespace ExtraLimb.UI
             string prefix = runner.IsPractice ? "練習：" : "";
             switch (runner.Phase)
             {
-                case TrialPhase.Ready: return "準備中：Re-center → 動かし方を説明 → 開始";
+                case TrialPhase.Ready: return "準備中：動かし方を説明 → 開始（参加者が止まると Re-center して始まります）";
+                case TrialPhase.Settle:
+                    return $"{prefix}参加者が止まるのを待っています（止まって {runner.SettleStillSeconds:F1}/{runner.SettleHoldTime:F1} 秒）。今の姿勢で始めるなら Space";
                 case TrialPhase.Lead: return $"{prefix}まもなく前半（{Mathf.CeilToInt((float)runner.SecondsToSegmentStart)} 秒後）";
                 case TrialPhase.Segment1: return $"{prefix}前半（追加肢のみ）　残り {Clock(runner.SegmentRemaining)}";
                 case TrialPhase.Interlude: return $"{prefix}まもなく後半（{Mathf.CeilToInt((float)runner.SecondsToSegmentStart)} 秒後）";
@@ -1045,6 +1073,7 @@ namespace ExtraLimb.UI
             switch (runner.Phase)
             {
                 case TrialPhase.Ready: phase = "準備中"; break;
+                case TrialPhase.Settle: phase = "止まるのを待っています"; break;
                 case TrialPhase.Lead:
                     phase = "まもなく前半";
                     time = Mathf.CeilToInt((float)runner.SecondsToSegmentStart).ToString(CultureInfo.InvariantCulture);
@@ -1249,11 +1278,40 @@ namespace ExtraLimb.UI
                     var later = new List<string>();
                     foreach (var (_, to) in runner.TrackerSwaps)
                         if (BodySites.IsRight(to)) later.Add(BodySiteNames.Kind(to));
-                    text = $"トラッカー：最初は{string.Join("・", names)}（左右）に付け、3つ目のブロックの前に{string.Join("・", later)}へ付け替える";
+                    text = $"トラッカー：最初は{string.Join("・", names)}（左右）に付け、3つ目のブロックの前に{string.Join("・", later)}へ付け替える。" +
+                           "どちらも付けた後に「トラッカーの確認」をする（どのトラッカーをどこに付けてもよい）";
                 }
                 ShowText(trackerPlanLabel, text);
             }
+            if (checklistLabel != null) ShowText(checklistLabel, runner.IsExperimentMode ? ChecklistText() : "");
             if (bodyMessage != null) ShowText(bodyMessage, session.BodyMessage);
+        }
+
+        // 準備のチェックリスト：提示順・体の寸法・トラッカーの確認（次のブロックの部位）・円
+        string ChecklistText()
+        {
+            var plan = runner.Plan;
+            var body = session.Body;
+            bool hasPlan = runner.HasPlan;
+            bool bodyDone = body != null && body.IsReady && body.Calibration.IsCalibrated;
+            var required = runner.RequiredTrackerSites;
+            var missing = new List<string>();
+            bool anyAbsent = false;
+            foreach (var site in required)
+            {
+                if (runner.IsTrackerSiteAbsent(site)) anyAbsent = true;
+                else if (!runner.IsTrackerSiteVerified(site)) missing.Add(BodySiteNames.Japanese(site));
+            }
+            var kinds = new List<string>();
+            for (int i = 0; i < required.Count; i += 2) kinds.Add(BodySiteNames.Kind(required[i]));
+            string trackers = required.Count == 0 ? "トラッカーの確認：提示順を作ってから"
+                : missing.Count > 0 ? $"トラッカーの確認：まだ（{string.Join("・", missing)}）"
+                : anyAbsent ? $"トラッカーの確認：済み（{string.Join("・", kinds)}。左はトラッカーなしで右の追加肢だけ）"
+                : $"トラッカーの確認：済み（{string.Join("・", kinds)}の左右）";
+            var spec = runner.Current;
+            int block = spec != null ? spec.block : -1;
+            string ring = block >= 0 && runner.RingBlock == block ? "円：このブロックで置き直し済み" : "円：ブロックの最初の開始で置き直します";
+            return $"準備　{(hasPlan ? "提示順：済み" : "提示順：まだ")}　{(bodyDone ? "体の寸法：済み" : "体の寸法：まだ（反映を押す）")}\n{trackers}\n{ring}";
         }
 
         void RefreshRunner()
@@ -1276,34 +1334,64 @@ namespace ExtraLimb.UI
 
             bool beforeOrDuring = phase == TrialPhase.Ready || runner.IsRunning;
             bool mismatch = spec != null && !runner.IsPractice && beforeOrDuring && !runner.MatchesCurrent;
-            bool recentered = runner.RecenterRequestsSinceLoad > 0;
             string recenter = mismatch ? "今の設定が条件と異なります（R で読み込み直し）"
-                : spec == null || !beforeOrDuring ? ""
-                : recentered ? "Re-center：済み" : "Re-center：まだ（Space）";
+                : spec == null || phase != TrialPhase.Ready ? ""
+                : "Re-center は開始のときに、参加者が止まるのを待って自動で行います";
             ShowText(recenterLabel, recenter);
             recenterLabel.EnableInClassList("el-warn", mismatch);
-            recenterLabel.EnableInClassList("el-caution", !mismatch && !recentered);
-            recenterLabel.EnableInClassList("el-ok", !mismatch && recentered);
+            recenterLabel.EnableInClassList("el-muted", !mismatch);
+            ShowText(layoutWarningLabel, session.LayoutWarning);
+            ShowText(leftLimbNoteLabel, runner.LeftLimbNote);
+
+            // トラッカーの確認
+            var check = runner.TrackerCheck;
+            bool checking = check.IsActive;
+            bool needsCheck = runner.NeedsTrackerCheck;
+            string checkText = "";
+            if (checking)
+            {
+                checkText = ConditionRunner.CheckInstruction(check.CurrentSite) + (check.Hint.Length > 0 ? "\n" + check.Hint : "");
+                if (runner.CanSkipLeftTrackers)
+                    checkText += "\n左のトラッカーを付けていなければ「左はなし」を押してください（左の部位らしい位置にトラッカーがなければ自動で飛ばします）";
+            }
+            else if (needsCheck)
+            {
+                var required = runner.RequiredTrackerSites;
+                var kinds = new List<string>();
+                for (int i = 0; i < required.Count; i += 2) kinds.Add(BodySiteNames.Kind(required[i]));
+                bool later = spec != null ? spec.block >= 2 || (phase != TrialPhase.Ready && runner.CurrentIndex + 1 < plan.Count && plan.conditions[runner.CurrentIndex + 1].block >= 2)
+                    : false;
+                checkText = $"トラッカーを{string.Join("・", kinds)}の左右に{(later ? "付け替えて" : "付けて")}から、確認してください（どのトラッカーをどこに付けてもかまいません。" +
+                            "左のトラッカーがなければ右だけでもかまいません）";
+            }
+            ShowText(trackerCheckLabel, checkText);
+            ShowText(trackerCheckList, checking || check.IsComplete && needsCheck ? TrackerCheckListText(check) : "");
+            Show(trackerCheckButton, !checking && (needsCheck || phase == TrialPhase.Ready || phase == TrialPhase.Break || phase == TrialPhase.Done || phase == TrialPhase.Idle));
+            trackerCheckButton.SetEnabled(!runner.IsRunning && phase != TrialPhase.Rating);
+            SetText(trackerCheckButton, needsCheck ? "トラッカーの確認を始める" : "トラッカーの確認をやり直す");
+            Show(trackerCheckSkipLeftButton, runner.CanSkipLeftTrackers);
+            Show(trackerCheckCancelButton, checking);
+
+            // 始められない理由（準備中だけ）
+            string blocked = "";
+            bool canStart = phase == TrialPhase.Ready && runner.CanStart(out blocked);
+            ShowText(startBlockedLabel, phase == TrialPhase.Ready && !canStart ? "始められません：" + blocked.Replace("\n", "\n・") : "");
 
             bool running = runner.IsRunning;
             prevButton.SetEnabled(runner.HasPlan && !running && runner.CurrentIndex > 0);
             nextButton.SetEnabled(runner.HasPlan && !running && runner.CurrentIndex + 1 < plan.Count);
-            startButton.SetEnabled(phase == TrialPhase.Ready);
+            startButton.SetEnabled(canStart);
             abortButton.SetEnabled(running || phase == TrialPhase.Rating);
             redoButton.SetEnabled(spec != null && !running);
             practiceButton.SetEnabled(!running && phase != TrialPhase.Rating);
 
-            // 次に押すボタンだけを塗る（Re-center → 開始、終わったら次へ）
+            // 次に押すボタンだけを塗る（トラッカーの確認 → 開始、終わったら次へ）
             Button primary = null;
-            if (phase == TrialPhase.Ready) primary = recentered || runner.IsPractice ? startButton : recenterButton;
+            if (phase == TrialPhase.Ready && canStart) primary = startButton;
             else if (!running && phase != TrialPhase.Rating && phase != TrialPhase.Finished && runner.HasPlan
                      && (spec == null || phase == TrialPhase.Done || phase == TrialPhase.Break) && runner.CurrentIndex + 1 < plan.Count) primary = nextButton;
-            // トラッカーの付け替え（後半のブロックの前）。必要なら付け替えのボタンを先に塗る
-            bool swap = runner.NeedsTrackerSwap;
-            ShowText(trackerSwapLabel, swap ? $"トラッカーを付け替えてください：{runner.TrackerSwapText()}" : "");
-            Show(trackerSwapButton, swap);
-            if (swap && (primary == nextButton || primary == recenterButton || primary == startButton)) primary = trackerSwapButton;
-            foreach (var button in new[] { recenterButton, startButton, nextButton, trackerSwapButton }) button.EnableInClassList(PrimaryClass, button == primary);
+            if (needsCheck && !checking) primary = trackerCheckButton;
+            foreach (var button in new[] { recenterButton, startButton, nextButton, trackerCheckButton }) button.EnableInClassList(PrimaryClass, button == primary);
             createPlanButton?.EnableInClassList(PrimaryClass, !runner.HasPlan);
 
             var rating = runner.Rating;
@@ -1475,6 +1563,7 @@ namespace ExtraLimb.UI
                     ? "左右の同じ部位にトラッカーを付けると、Re-center のときに前の向きを求めます（F で記録もできます）"
                     : "入力の部位を前へ出してから記録してください";
             ShowText(forwardMessage, forwardText);
+            ShowText(limbLayoutWarning, session.LayoutWarning);
         }
 
         // 振ったトラッカーを、設定している追加肢の入力の部位に割り当てる。困ったときだけ案内とボタンを出す

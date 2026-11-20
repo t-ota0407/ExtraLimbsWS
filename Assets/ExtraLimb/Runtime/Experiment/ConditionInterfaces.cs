@@ -28,5 +28,8 @@ namespace ExtraLimb.Experiment
 
         /// <summary>課題を途中で止めた（中止）。</summary>
         void CancelSegment();
+
+        /// <summary>ターゲットなどを今の体の位置で置き直す（ブロックの始め。休憩で座り直したのに合わせる。2026-11-15）。</summary>
+        void Relayout();
     }
 }

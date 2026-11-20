@@ -152,6 +152,15 @@ namespace ExtraLimb.Experiment
         /// <summary>当たる範囲（効果器の球）を見せるかの切り替え（key＝show、new＝1/0。2026-11-13）。</summary>
         public const string ReachProbes = "reach_probes";
 
+        /// <summary>トラッカーの確認（key＝start／site（部位、new＝トラッカーの ID）／done／cancel。2026-11-15）。</summary>
+        public const string TrackerCheck = "tracker_check";
+
+        /// <summary>Re-center のときに見つけたトラッカーの付け間違いの疑い（new＝文。2026-11-15）。</summary>
+        public const string TrackerLayout = "tracker_layout";
+
+        /// <summary>課題の開始で、参加者が止まるのを待つ（key＝start／still（止まった）／manual（実験者が Re-center した）。2026-11-15）。</summary>
+        public const string Settle = "settle";
+
         public const string LogStart = "log_start";
         public const string LogStop = "log_stop";
     }
@@ -176,6 +185,9 @@ namespace ExtraLimb.Experiment
 
         /// <summary>記録の再生（Step 4-4）。</summary>
         public const string Replay = "replay";
+
+        /// <summary>課題の開始のとき、参加者が止まってから自動で（Re-center。2026-11-15）。</summary>
+        public const string TrialStart = "start";
 
         /// <summary>実験者のキー（例：key:F1、key:Ctrl+2）。</summary>
         public static string Key(string name) => "key:" + name;

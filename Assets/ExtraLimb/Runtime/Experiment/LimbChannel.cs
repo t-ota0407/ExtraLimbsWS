@@ -190,7 +190,8 @@ namespace ExtraLimb.Experiment
                     owner.Raise(SessionEventTypes.Recenter, Subject, "input", "", InputId,
                         $"{Label}の追加肢：Re-center（基準 {ReferenceId}、入力 {InputId}）", ChangeOrigins.System);
                     if (loadForwardPending) LoadForward();
-                    ApplyForwardFromSides(referencePose);
+                    float forwardChange = ApplyForwardFromSides(referencePose, out string forwardPair);
+                    owner.CheckTrackerLayout(this, referencePose, forwardChange, forwardPair);
                 }
                 else if (!wasInputValid)
                 {
@@ -250,7 +251,8 @@ namespace ExtraLimb.Experiment
             string previous = hadForward ? VectorText(Pipeline.BodyFrame.Forward) : "";
             if (Pipeline.TryRecordForward(referencePose, inputPose, owner.MinForwardGestureMeters))
             {
-                ForwardMessage = $"前の向きを記録しました（前へ出した距離 {horizontal.magnitude * 100f:F1} cm。次の Re-center までこの向きを使います）";
+                ForwardMessage = $"前の向きを記録して保存しました（前へ出した距離 {horizontal.magnitude * 100f:F1} cm）" +
+                                 (owner.AutoForwardFromSides ? "。左右の同じ部位のトラッカーがそろっていれば、Re-center のときにそこから求め直します" : "");
                 ForwardSource = "F で記録";
                 owner.OnForwardRecorded(this);
                 Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {Pipeline.BodyFrame.Forward.ToString("F2")}");
@@ -265,29 +267,34 @@ namespace ExtraLimb.Experiment
             }
         }
 
-        // Re-center のときに、左右の同じ部位のトラッカーを結ぶ線から前の向きを求める（2026-11-13）。組がなければ今の前の向きのまま
-        void ApplyForwardFromSides(Pose referencePose)
+        // Re-center のときに、左右の同じ部位のトラッカーを結ぶ線から前の向きを求める（2026-11-13）。組がなければ今の前の向きのまま。
+        // 前回からの角度（度）を返す（求めなかったときと、前回がなかったときは 0）
+        float ApplyForwardFromSides(Pose referencePose, out string pair)
         {
-            if (!owner.AutoForwardFromSides) return;
-            if (!owner.TryForwardFromSides(ReferenceId, referencePose, Pipeline.BodyFrame.Up, out var forward, out string pair, out float separation))
+            pair = "";
+            if (!owner.AutoForwardFromSides) return 0f;
+            if (!owner.TryForwardFromSides(ReferenceId, referencePose, Pipeline.BodyFrame.Up, out var forward, out pair, out float separation))
             {
                 ForwardMessage = Pipeline.BodyFrame.HasForward
                     ? "左右の同じ部位のトラッカーがそろっていないため、前の向きはそのまま使っています"
                     : "左右の同じ部位のトラッカーがそろっていません。前の向きを F で記録してください";
-                return;
+                return 0f;
             }
             bool hadForward = Pipeline.BodyFrame.HasForward;
             var before = Pipeline.BodyFrame.Forward;
-            if (!Pipeline.BodyFrame.TrySetForward(forward, 0.5f)) return;
+            if (!Pipeline.BodyFrame.TrySetForward(forward, 0.5f)) return 0f;
+            // トラッカーの確認の直後は、直す前の向きと比べない
+            bool compare = hadForward && !owner.ConsumeForwardBaselineReset();
             var after = Pipeline.BodyFrame.Forward;
-            float change = hadForward ? Vector3.Angle(before, after) : 0f;
+            float change = compare ? Vector3.Angle(before, after) : 0f;
             ForwardSource = $"左右の{pair}から自動";
             ForwardMessage = $"左右の{pair}のトラッカーから前の向きを求めました（左右の間隔 {separation * 100f:F0} cm" +
-                             (hadForward ? $"、前回から {change:F1}°）" : "）");
+                             (compare ? $"、前回から {change:F1}°）" : "）");
             owner.SaveForward(this);
             Debug.Log($"[ExtraLimb] {Label}の追加肢：{ForwardMessage}。体の前＝基準の座標で {after.ToString("F2")}");
             owner.Raise(SessionEventTypes.Forward, Subject, ReferenceId, hadForward ? VectorText(before) : "", VectorText(after),
                 $"{Label}の追加肢：{ForwardMessage}", ChangeOrigins.System);
+            return change;
         }
 
         void AutoSelect(TrackerRegistry registry)
@@ -332,6 +339,12 @@ namespace ExtraLimb.Experiment
         bool TryGetPoses(TrackerRegistry registry, out Pose referencePose, out Pose inputPose)
         {
             referencePose = inputPose = default;
+            var site = BodySites.OnSide(Config.inputSite, Side == LimbSide.Left);
+            if (owner.IsSiteHeld(site))
+            {
+                StatusMessage = $"{BodySiteNames.Japanese(site)}はトラッカーなし（トラッカーの確認で「なし」にしました）";
+                return false;
+            }
             if (!registry.TryGet(InputId, out var input))
             {
                 StatusMessage = $"{BodySiteNames.Japanese(Config.inputSite)}のトラッカーが見つかりません";

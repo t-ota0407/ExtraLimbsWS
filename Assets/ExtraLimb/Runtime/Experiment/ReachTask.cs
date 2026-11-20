@@ -176,6 +176,9 @@ namespace ExtraLimb.Experiment
             if (!placed && e.type == SessionEventTypes.RecenterRequest && e.origin != ChangeOrigins.System) placeRequested = true;
         }
 
+        /// <summary>次の LateUpdate（体を解いた後）で円を置き直す（ブロックの始め。課題の途中は置き直さない）。</summary>
+        public void Relayout() => placeRequested = true;
+
         // 身長・肩幅を変えたら、アバターの大きさが変わった後の体で置き直す
         void OnBodyChanged()
         {
@@ -238,7 +241,8 @@ namespace ExtraLimb.Experiment
             foreach (var channel in session.Channels)
             {
                 var limb = channel.Limb;
-                if (channel.Active && limb != null && limb.IsReady && limb.Reach > 1e-3f) limbs.Add(limb);
+                // トラッカーがなく止めている追加肢（左のトラッカーなしで右だけで行うときの左など）は数えない
+                if (channel.Active && channel.IsInputValid && limb != null && limb.IsReady && limb.Reach > 1e-3f) limbs.Add(limb);
             }
             if (limbs.Count == 0) return -1;
             int count = 0;
@@ -370,7 +374,8 @@ namespace ExtraLimb.Experiment
                 foreach (var channel in session.Channels)
                 {
                     var limb = channel.Limb;
-                    if (!channel.Active || limb == null || !limb.IsReady || !limb.Visible) continue;
+                    // 入力を追跡できず止まっている追加肢では触れない（左のトラッカーなしで右だけで行うときの左など）
+                    if (!channel.Active || !channel.IsInputValid || limb == null || !limb.IsReady || !limb.Visible) continue;
                     var kind = limb.Side == LimbSide.Left ? EffectorKind.ExtraLeft : EffectorKind.ExtraRight;
                     probes.Add(new EffectorProbe(kind, true, FingertipProbeCenter(limb.ContactPoint, limb.ContactDirection, layout.probeRadius),
                         layout.probeRadius));

@@ -191,6 +191,7 @@ namespace ExtraLimb.Experiment
             if (registry == null || !registry.TryGet(referenceId, out var reference)) return false;
             foreach (var rightSite in ForwardPairPriority)
             {
+                if (IsSiteHeld(rightSite) || IsSiteHeld(BodySites.Mirror(rightSite))) continue;
                 var right = registry.FindBySite(rightSite, reference.Space);
                 var left = registry.FindBySite(BodySites.Mirror(rightSite), reference.Space);
                 if (right == null || left == null || !right.TryGetPose(out var rightPose) || !left.TryGetPose(out var leftPose)) continue;
@@ -203,10 +204,117 @@ namespace ExtraLimb.Experiment
             return false;
         }
 
+        /// <summary>基準と同じ空間に、前の向きを求められる左右の同じ部位のトラッカーの組（両方追跡できているもの）があるか。</summary>
+        public bool HasForwardPair(string referenceId)
+        {
+            if (registry == null || !registry.TryGet(referenceId, out var reference)) return false;
+            foreach (var rightSite in ForwardPairPriority)
+            {
+                if (IsSiteHeld(rightSite) || IsSiteHeld(BodySites.Mirror(rightSite))) continue;
+                var right = registry.FindBySite(rightSite, reference.Space);
+                var left = registry.FindBySite(BodySites.Mirror(rightSite), reference.Space);
+                if (right != null && left != null && right.TryGetPose(out _) && left.TryGetPose(out _)) return true;
+            }
+            return false;
+        }
+
+        readonly HashSet<BodySite> heldSites = new HashSet<BodySite>();
+
+        /// <summary>
+        /// トラッカーなしにした部位（トラッカーの確認で、左のトラッカーを付けずに右だけで行うとしたとき。2026-11-20）。
+        /// その部位を入力にする追加肢は止め、前の向きやトラッカーの位置の確認にも使わない（古い割り当てのトラッカーが残っていても）。
+        /// </summary>
+        public void SetHeldSites(IEnumerable<BodySite> sites)
+        {
+            var next = new HashSet<BodySite>(sites ?? Array.Empty<BodySite>());
+            if (next.SetEquals(heldSites)) return;
+            heldSites.Clear();
+            heldSites.UnionWith(next);
+            var names = new List<string>();
+            foreach (var site in heldSites) names.Add(BodySiteNames.Japanese(site));
+            string text = string.Join(" ", names);
+            Raise(SessionEventTypes.TrackerCheck, "session", "held", "", text,
+                heldSites.Count > 0 ? $"トラッカーなしの部位（追加肢を止めます）：{string.Join("・", names)}" : "トラッカーなしの部位はありません", ChangeOrigins.System);
+        }
+
+        /// <summary>トラッカーなしにした部位か（SetHeldSites）。</summary>
+        public bool IsSiteHeld(BodySite site) => heldSites.Contains(site);
+
         // 左右のトラッカーから求めた前の向きを保存する（組が使えなくなったときに使う）
         internal void SaveForward(LimbChannel source)
         {
             if (bindings != null) bindings.SaveForward(source.ReferenceId, source.Pipeline.BodyFrame.Forward);
+        }
+
+        /// <summary>前の向きが前回の Re-center からこれ（度）以上変わったら知らせる。</summary>
+        public const float MaxForwardChangeDegrees = 10f;
+
+        string layoutWarning = "";
+        int layoutCheckFrame = -1;
+        bool forwardBaselinePending;
+        int forwardBaselineFrame = -1;
+
+        /// <summary>
+        /// 次の Re-center では、前の向きを前回と比べない（トラッカーの確認で割り当てを直した後。
+        /// 直す前の前の向きと比べると、直したことを付け間違いと知らせてしまう）。
+        /// </summary>
+        public void ResetForwardBaseline() => forwardBaselinePending = true;
+
+        // ResetForwardBaseline の後の最初の Re-center のフレーム（2本の追加肢）なら true
+        internal bool ConsumeForwardBaselineReset()
+        {
+            if (forwardBaselinePending)
+            {
+                forwardBaselinePending = false;
+                forwardBaselineFrame = Time.frameCount;
+            }
+            return forwardBaselineFrame == Time.frameCount;
+        }
+
+        /// <summary>直近の Re-center で見つけたトラッカーの付け間違いの疑い（なければ空。複数なら改行で区切る。2026-11-15）。</summary>
+        public string LayoutWarning => layoutWarning;
+
+        /// <summary>
+        /// Re-center の直後に、トラッカーの位置から付け間違いを探す（TrackerLayoutCheck：同じ側の高さの順、左右）。
+        /// 前の向きが前回から MaxForwardChangeDegrees 以上変わったときも知らせる。同じフレームの2本目の追加肢では調べ直さない。
+        /// </summary>
+        internal void CheckTrackerLayout(LimbChannel source, Pose referencePose, float forwardChangeDegrees, string forwardPair)
+        {
+            if (layoutCheckFrame == Time.frameCount) return;
+            layoutCheckFrame = Time.frameCount;
+            if (registry == null || !registry.TryGet(source.ReferenceId, out var reference)) return;
+            var trackers = new List<(BodySite, Vector3)>();
+            foreach (var tracker in registry.Sources)
+            {
+                if (tracker.Space != reference.Space || TrackerLayoutCheck.HeightRank(tracker.Site) == 0 || IsSiteHeld(tracker.Site)
+                    || !tracker.TryGetPose(out var pose)) continue;
+                trackers.Add((tracker.Site, NeutralPoseCalibrator.ToReferenceLocal(referencePose, pose).position));
+            }
+            var frame = source.Pipeline.BodyFrame;
+            var problems = new List<string>();
+            var found = TrackerLayoutCheck.Find(trackers, frame.Up, frame.Right);
+            // 前の向きがほぼ逆になった：前の向きを求めた組が左右逆に付いている。体の左右が逆なので、ほかの組の左右の判定は当てにならない
+            bool flipped = forwardChangeDegrees >= 90f;
+            if (flipped)
+            {
+                string pair = string.IsNullOrEmpty(forwardPair) ? "どこか" : forwardPair;
+                problems.Add($"前の向きが前回から {forwardChangeDegrees:F0}° 変わりました。左右の{pair}のトラッカーが左右逆に付いているようです");
+                found.RemoveAll(problem => problem.Contains("左右逆"));
+            }
+            else if (forwardChangeDegrees >= MaxForwardChangeDegrees)
+            {
+                problems.Add($"前の向きが前回から {forwardChangeDegrees:F0}° 変わりました（座り方か、トラッカーの付け方を確かめてください）");
+            }
+            problems.AddRange(found);
+            if (problems.Count > 0) problems.Add("→ 条件の進行の欄で「トラッカーの確認」をやり直してください");
+            string text = string.Join("\n", problems);
+            if (problems.Count > 0)
+            {
+                Debug.LogWarning($"[ExtraLimb] トラッカーの位置の確認：{text.Replace("\n", " / ")}");
+                Raise(SessionEventTypes.TrackerLayout, "session", "warning", "", text.Replace("\n", " / "), $"トラッカーの付け間違いの疑い：{text.Replace("\n", " / ")}",
+                    ChangeOrigins.System);
+            }
+            layoutWarning = text;
         }
 
         /// <summary>使えるマッピングの型（全部位）。</summary>

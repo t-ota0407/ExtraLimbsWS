@@ -41,6 +41,9 @@ namespace ExtraLimb.Experiment
 
         /// <summary>すべての条件を終えた。</summary>
         Finished,
+
+        /// <summary>開始（または練習）の前に、参加者が楽な姿勢で止まるのを待つ。止まったら Re-center して Lead へ（2026-11-15）。</summary>
+        Settle,
     }
 
     /// <summary>提示順の中の各条件の状態。</summary>
@@ -71,6 +74,13 @@ namespace ExtraLimb.Experiment
     /// 左の設定は右を鏡に写す（LimbSession.MirrorLeftFromRight）。トラッカーは4台で、前半2ブロックの部位（左右）に付けておき、
     /// 3つ目のブロックの前の休憩で後半2ブロックの部位に付け替える（TrackerSwaps・SwapTrackers）。
     /// </para>
+    /// <para>
+    /// 間違いを防ぐ仕組み（2026-11-15）：
+    /// トラッカーは、付けた後と付け替えた後に「トラッカーの確認」（TrackerCheck。部位を1つずつ動かしてもらい、動いたトラッカーを割り当てる）をする。
+    /// 開始（Enter）は、体の寸法・そのブロックの部位のトラッカーの確認・入力の追跡がそろっていなければ断り、理由を出す（CanStart）。
+    /// 開始すると、参加者が楽な姿勢で止まるのを待って Re-center してから案内とカウントダウンに進む（Settle）。
+    /// ブロックの最初の開始では、休憩で座り直したのに合わせてリーチング課題の円を置き直す（IConditionTask.Relayout）。
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(10030)]
     public class ConditionRunner : MonoBehaviour
@@ -85,6 +95,7 @@ namespace ExtraLimb.Experiment
             "attach_point", "input_site", "mapping", "gain", "matches_condition", "attempt", "status",
             "loaded_time", "start_time", "seg1_start", "seg1_end", "seg2_start", "seg2_end",
             "seg1_hits", "seg2_hits", "rating_ease", "rating_body", "rating_fatigue", "recenter_requests", "note", "limbs",
+            "limbs_driven",
         };
 
         [Tooltip("空なら同じ GameObject かシーンから探す")]
@@ -113,6 +124,30 @@ namespace ExtraLimb.Experiment
         [SerializeField] string breakText = "休憩です";
         [SerializeField] string finishedText = "すべて終わりました";
 
+        // 間違いを防ぐ仕組み（2026-11-15）。シーンに保存しないよう定数にする
+        const float SettleMaxSpeed = 0.03f;
+        const float SettleMaxAngularSpeed = 15f;
+        const float SettleHoldSeconds = 0.5f;
+        const float TrackerCheckPauseSeconds = 0.8f;
+        const string SettleText = "楽な姿勢で止まってください";
+        const string SettleFeetText = "楽な姿勢で、両足をそろえて止まってください";
+        const string TrackerCheckDoneText = "確認できました";
+        // 左の部位を確かめる番で、残りの左の部位に割り振れるトラッカーが足りない状態がこれ（秒）続いたら、左はトラッカーなしとして飛ばす（2026-11-20）
+        const float LeftShortageSeconds = 1f;
+
+        readonly TrackerCheck trackerCheck = new TrackerCheck();
+        readonly StillnessDetector stillness = new StillnessDetector
+            { MaxSpeed = SettleMaxSpeed, MaxAngularSpeed = SettleMaxAngularSpeed, HoldSeconds = SettleHoldSeconds };
+        readonly HashSet<BodySite> verifiedSites = new HashSet<BodySite>();
+        // トラッカーの確認で「トラッカーなし」とした左の部位（右の追加肢だけで行う。左の追加肢は止める。2026-11-20）
+        readonly HashSet<BodySite> absentSites = new HashSet<BodySite>();
+        float leftShortageSince = -1f;
+        readonly List<(string, Vector3)> checkPositions = new List<(string, Vector3)>();
+        readonly List<(string, bool, Pose)> settlePoses = new List<(string, bool, Pose)>();
+        bool settlePractice, settledByHand;
+        float trackerCheckResumeAt;
+        int ringBlock = -1;
+
         readonly TrialTimeline timeline = new TrialTimeline();
         readonly List<TrialCue> cueBuffer = new List<TrialCue>();
         readonly ConditionRating rating = new ConditionRating();
@@ -128,6 +163,7 @@ namespace ExtraLimb.Experiment
         bool practice;
         int practiceCount;
         bool matchesAtStart;
+        int drivenAtStart;
         int recenterRequests;
         float breakStartedAt;
         double loadedAt = double.NaN, startedAt = double.NaN;
@@ -152,11 +188,24 @@ namespace ExtraLimb.Experiment
 
         public TrialPhase Phase => phase;
 
-        /// <summary>課題の時間を進めている途中か（案内・カウントダウン・前半・後半）。</summary>
-        public bool IsRunning => phase == TrialPhase.Lead || phase == TrialPhase.Segment1 || phase == TrialPhase.Interlude || phase == TrialPhase.Segment2;
+        /// <summary>課題の途中か（開始の前の待ち・案内・カウントダウン・前半・後半）。</summary>
+        public bool IsRunning => phase == TrialPhase.Settle || phase == TrialPhase.Lead || phase == TrialPhase.Segment1 || phase == TrialPhase.Interlude
+                                 || phase == TrialPhase.Segment2;
 
-        /// <summary>練習（今の設定で、提示順に数えない）の途中か。</summary>
-        public bool IsPractice => practice;
+        /// <summary>練習（今の設定で、提示順に数えない）の途中か（開始の前の待ちを含む）。</summary>
+        public bool IsPractice => practice || (phase == TrialPhase.Settle && settlePractice);
+
+        /// <summary>トラッカーの確認（2026-11-15）。</summary>
+        public TrackerCheck TrackerCheck => trackerCheck;
+
+        /// <summary>開始の前に、参加者が止まり続けている秒。</summary>
+        public float SettleStillSeconds => stillness.StillSeconds;
+
+        /// <summary>開始の前の待ちで、止まったとみなすまでの秒。</summary>
+        public float SettleHoldTime => SettleHoldSeconds;
+
+        /// <summary>この提示順で、ブロックの始めに円を置き直した最後のブロック（まだなら -1）。</summary>
+        public int RingBlock => ringBlock;
 
         /// <summary>今の区間（0＝区間の外、1＝前半、2＝後半）。</summary>
         public int Segment => timeline.Segment;
@@ -254,7 +303,8 @@ namespace ExtraLimb.Experiment
         {
             switch (phase)
             {
-                case TrialPhase.Ready: return "準備（Re-center → 動かし方を伝える → 開始）";
+                case TrialPhase.Ready: return "準備（動かし方を伝える → 開始）";
+                case TrialPhase.Settle: return "開始の前（参加者が止まるのを待って Re-center）";
                 case TrialPhase.Lead: return "前半の前の案内とカウントダウン";
                 case TrialPhase.Segment1: return "前半（追加肢だけ）";
                 case TrialPhase.Interlude: return "後半の前の案内とカウントダウン";
@@ -321,7 +371,10 @@ namespace ExtraLimb.Experiment
 
         void OnSessionEvent(SessionEvent e)
         {
-            if (e.type == SessionEventTypes.RecenterRequest) recenterRequests++;
+            if (e.type != SessionEventTypes.RecenterRequest) return;
+            recenterRequests++;
+            // 開始の前の待ちの間に実験者が Re-center したら、今の姿勢のまま始める
+            if (phase == TrialPhase.Settle && e.origin != ChangeOrigins.TrialStart && e.origin != ChangeOrigins.System) settledByHand = true;
         }
 
         // ---- モード ----
@@ -471,6 +524,15 @@ namespace ExtraLimb.Experiment
                 return false;
             }
 
+            // 参加者が変わったら、トラッカーの確認と円はやり直す
+            if (plan == null || plan.participantId != newPlan.participantId)
+            {
+                verifiedSites.Clear();
+                absentSites.Clear();
+                session?.SetHeldSites(absentSites);
+            }
+            ringBlock = -1;
+            if (trackerCheck.IsActive) CancelTrackerCheck();
             plan = newPlan;
             statuses = new ConditionStatus[plan.Count];
             attempts = new int[plan.Count];
@@ -633,24 +695,231 @@ namespace ExtraLimb.Experiment
             return sites;
         }
 
-        /// <summary>
-        /// 今トラッカーを付け替える必要があるか：次に行う条件が後半のブロック（3つ目以降）で、その部位にまだトラッカーが割り当てられておらず、
-        /// 付け替え元の部位には割り当ててある。課題の途中は false。
-        /// </summary>
-        public bool NeedsTrackerSwap
+        /// <summary>ブロック block（0 始まり）でトラッカーを付けておく部位（前半か後半の2ブロックの部位の左右。右、左の順）。</summary>
+        public IReadOnlyList<BodySite> TrackerSitesForBlock(int block) => block < 2 ? TrackerSites(0, 1) : TrackerSites(2, 3);
+
+        // 次に行う条件（準備中・課題中なら今の条件）。なければ -1
+        int UpcomingIndex => plan == null ? -1
+            : phase == TrialPhase.Ready || IsRunning ? currentIndex
+            : currentIndex + 1 < plan.Count ? currentIndex + 1 : -1;
+
+        /// <summary>次に行う条件のブロックでトラッカーを付けておく部位（提示順がなければ空）。</summary>
+        public IReadOnlyList<BodySite> RequiredTrackerSites
         {
             get
             {
-                if (!IsExperimentMode || plan == null || IsRunning || phase == TrialPhase.Rating) return false;
-                var bindings = TrackerBindingService.Find();
-                if (bindings == null) return false;
-                int upcoming = phase == TrialPhase.Ready ? currentIndex
-                    : currentIndex + 1 < plan.Count ? currentIndex + 1 : -1;
-                if (upcoming < 0 || plan.conditions[upcoming].block < 2) return false;
-                foreach (var (from, to) in TrackerSwaps)
-                    if (!bindings.HasAssigned(to) && bindings.HasAssigned(from)) return true;
+                int upcoming = UpcomingIndex;
+                return upcoming >= 0 ? TrackerSitesForBlock(plan.conditions[upcoming].block) : Array.Empty<BodySite>();
+            }
+        }
+
+        /// <summary>その部位のトラッカーを、この参加者で確認したか。</summary>
+        public bool IsTrackerSiteVerified(BodySite site) => verifiedSites.Contains(site);
+
+        /// <summary>その部位を、トラッカーの確認で「トラッカーなし」にしたか（左だけ。右の追加肢だけで行う）。</summary>
+        public bool IsTrackerSiteAbsent(BodySite site) => absentSites.Contains(site);
+
+        // 確認が済んだ部位：トラッカーを割り当てたか、トラッカーなしにした
+        bool IsTrackerSiteDone(BodySite site) => verifiedSites.Contains(site) || absentSites.Contains(site);
+
+        /// <summary>
+        /// 左の追加肢を止めて右だけで行っているときの説明（左のトラッカーがない・追跡できない、または確認で「なし」にした）。なければ空。
+        /// 左のトラッカーがなくても始められる（右の追加肢だけで行う）。
+        /// </summary>
+        public string LeftLimbNote
+        {
+            get
+            {
+                if (session == null) return "";
+                foreach (var channel in session.Channels)
+                    if (channel.Side == LimbSide.Left && channel.Active && !channel.IsInputValid)
+                        return $"右の追加肢だけで行います。左の追加肢は止めています：{channel.StatusMessage}";
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// トラッカーの確認が要るか：実験モードで、次に行う条件のブロックの部位に、まだ確認していない部位がある（最初の装着と、後半の前の付け替え）。
+        /// 課題の途中・評価の入力中・確認の途中は false。
+        /// </summary>
+        public bool NeedsTrackerCheck
+        {
+            get
+            {
+                if (!IsExperimentMode || plan == null || IsRunning || phase == TrialPhase.Rating || trackerCheck.IsActive) return false;
+                foreach (var site in RequiredTrackerSites)
+                    if (!IsTrackerSiteDone(site)) return true;
                 return false;
             }
+        }
+
+        // ---- トラッカーの確認（2026-11-15） ----
+
+        /// <summary>
+        /// トラッカーの確認を始める。実験モードで提示順があれば次に行うブロックの部位（2部位の左右）を、なければ動かしている追加肢の入力の部位を、
+        /// 1つずつ確かめる。部位を挙げたら、参加者にその部位を動かしてもらうか、実験者がその部位のトラッカーを揺らす。
+        /// </summary>
+        public bool StartTrackerCheck()
+        {
+            if (IsRunning) return Fail("課題の途中です。中止（Esc）してから");
+            if (phase == TrialPhase.Rating) return Fail("口頭評価を入れてから");
+            var sites = RightFirst(IsExperimentMode && plan != null ? RequiredTrackerSites : DemoCheckSites());
+            if (sites.Count == 0) return Fail("確かめる部位がありません");
+            trackerCheck.Begin(sites);
+            trackerCheckResumeAt = Time.unscaledTime;
+            leftShortageSince = -1f;
+            var names = new List<string>();
+            foreach (var site in sites) names.Add(BodySiteNames.Japanese(site));
+            Report(SessionEventTypes.TrackerCheck, "session", "start", "", string.Join(" ", names), $"トラッカーの確認を始めました：{string.Join("・", names)}");
+            ResolveNotice();
+            ShowCheckPrompt();
+            Say("");
+            return true;
+        }
+
+        // 右の部位を先に、左の部位を後に確かめる（左のトラッカーがないときは、右を確かめ終えた後で左をまとめて飛ばせる）
+        static List<BodySite> RightFirst(IReadOnlyList<BodySite> sites)
+        {
+            var ordered = new List<BodySite>();
+            foreach (var site in sites)
+                if (!BodySites.IsLeft(site)) ordered.Add(site);
+            foreach (var site in sites)
+                if (BodySites.IsLeft(site)) ordered.Add(site);
+            return ordered;
+        }
+
+        /// <summary>トラッカーの確認で、今は左の部位を確かめているか（「左はなし」で飛ばせる）。</summary>
+        public bool CanSkipLeftTrackers => trackerCheck.IsActive && BodySites.IsLeft(trackerCheck.CurrentSite);
+
+        /// <summary>
+        /// 左のトラッカーを付けずに行う：確認の残りの左の部位を「トラッカーなし」として飛ばす。左の追加肢は止め、右の追加肢だけで行う。
+        /// 左の部位らしい位置（右の同じ部位と高さが近い所）にトラッカーがなければ確認が自動で飛ばすので、飛ばないときにこのボタンを使う。
+        /// </summary>
+        public bool SkipLeftTrackers() => SkipLeftTrackers(false);
+
+        bool SkipLeftTrackers(bool automatic)
+        {
+            if (!CanSkipLeftTrackers) return Fail("左の部位を確かめているときに使えます");
+            var names = new List<string>();
+            while (trackerCheck.IsActive && BodySites.IsLeft(trackerCheck.CurrentSite))
+                names.Add(BodySiteNames.Japanese(trackerCheck.Skip()));
+            string text = string.Join("・", names);
+            Report(SessionEventTypes.TrackerCheck, "session", "skip_left", automatic ? "auto" : "manual", text,
+                automatic ? $"トラッカーの確認：左の部位らしい位置にトラッカーがないため、左（{text}）はトラッカーなしにしました"
+                          : $"トラッカーの確認：左（{text}）はトラッカーなしにしました");
+            trackerCheckResumeAt = Time.unscaledTime + TrackerCheckPauseSeconds;
+            if (trackerCheck.IsComplete) FinishTrackerCheck();
+            else ShowCheckPrompt();
+            return true;
+        }
+
+        /// <summary>トラッカーの確認をやめる（割り当ては変えない）。</summary>
+        public void CancelTrackerCheck()
+        {
+            if (!trackerCheck.IsActive) return;
+            trackerCheck.Cancel();
+            notice?.Clear();
+            Report(SessionEventTypes.TrackerCheck, "session", "cancel", "", "", "トラッカーの確認をやめました");
+            Say("トラッカーの確認をやめました（割り当ては変えていません）");
+        }
+
+        /// <summary>参加者に見せる、部位を動かしてもらう文。</summary>
+        public static string MovePrompt(BodySite site) => $"{BodySiteNames.Japanese(site)}を少し動かしてください";
+
+        /// <summary>実験者への案内。</summary>
+        public static string CheckInstruction(BodySite site)
+        {
+            string name = BodySiteNames.Japanese(site);
+            return $"{name}：参加者に{name}を動かしてもらうか、{name}のトラッカーを軽く揺らしてください";
+        }
+
+        List<BodySite> DemoCheckSites()
+        {
+            var sites = new List<BodySite>();
+            if (session == null) return sites;
+            foreach (var channel in session.Channels)
+            {
+                if (!channel.Active) continue;
+                var site = BodySites.OnSide(channel.Config.inputSite, channel.Side == LimbSide.Left);
+                if (site != BodySite.Unknown && !sites.Contains(site)) sites.Add(site);
+            }
+            return sites;
+        }
+
+        void ShowCheckPrompt()
+        {
+            if (trackerCheck.IsActive) notice?.Show(MovePrompt(trackerCheck.CurrentSite), 600f);
+        }
+
+        void UpdateTrackerCheck()
+        {
+            var registry = session != null ? session.Registry : null;
+            if (registry == null) return;
+            checkPositions.Clear();
+            foreach (var source in registry.Sources)
+                if (source is IAssignableSite && source.TryGetPose(out var pose)) checkPositions.Add((source.Id, pose.position));
+            // 部位と部位の間は一息おく（前の部位を動かし終えるまでの動きを数えない）
+            if (Time.unscaledTime < trackerCheckResumeAt)
+            {
+                trackerCheck.Observe(checkPositions);
+                return;
+            }
+            if (UpdateLeftShortage()) return;
+            var done = trackerCheck.Update(checkPositions);
+            if (done == BodySite.Unknown) return;
+            trackerCheck.TryGetFound(done, out string id);
+            Report(SessionEventTypes.TrackerCheck, "session", done.ToString(), "", id, $"トラッカーの確認：{BodySiteNames.Japanese(done)}＝{id}");
+            trackerCheckResumeAt = Time.unscaledTime + TrackerCheckPauseSeconds;
+            if (trackerCheck.IsComplete) FinishTrackerCheck();
+            else ShowCheckPrompt();
+        }
+
+        // 左の部位の番で、残りの左の部位に割り振れるトラッカー（確認を始めてから見えた、まだ決まっていないもの。
+        // 右の同じ部位と高さが近く、ほどよく離れたもの：TrackerCheck.CanCoverRemaining）が足りない状態が続いたら、左をまとめて飛ばす
+        bool UpdateLeftShortage()
+        {
+            if (!CanSkipLeftTrackers)
+            {
+                leftShortageSince = -1f;
+                return false;
+            }
+            if (trackerCheck.CanCoverRemaining(Vector3.up))
+            {
+                leftShortageSince = -1f;
+                return false;
+            }
+            if (leftShortageSince < 0f) leftShortageSince = Time.unscaledTime;
+            if (Time.unscaledTime - leftShortageSince < LeftShortageSeconds) return false;
+            leftShortageSince = -1f;
+            return SkipLeftTrackers(true);
+        }
+
+        // 確かめた部位にトラッカーを割り当てる。前の部位（付け替える前の部位など）の割り当ては外れる。
+        // トラッカーなしにした左の部位は、左の追加肢を止める（古い割り当てのトラッカーが残っていても使わない）
+        void FinishTrackerCheck()
+        {
+            var bindings = TrackerBindingService.Find();
+            var parts = new List<string>();
+            foreach (var pair in trackerCheck.Found)
+            {
+                bindings?.Assign(pair.Value, pair.Key);
+                verifiedSites.Add(pair.Key);
+                parts.Add($"{BodySiteNames.Japanese(pair.Key)}＝{pair.Value}");
+            }
+            if (bindings != null) verifiedSites.RemoveWhere(site => !bindings.HasAssigned(site));
+            foreach (var site in trackerCheck.Found.Keys) absentSites.Remove(site);
+            foreach (var site in trackerCheck.Skipped)
+            {
+                absentSites.Add(site);
+                verifiedSites.Remove(site);
+                parts.Add($"{BodySiteNames.Japanese(site)}＝なし");
+            }
+            session?.SetHeldSites(absentSites);
+            session?.ResetForwardBaseline();
+            notice?.Show(TrackerCheckDoneText, 2f);
+            string text = string.Join("、", parts);
+            Report(SessionEventTypes.TrackerCheck, "session", "done", "", text, $"トラッカーの確認を終え、割り当てました：{text}");
+            Say(bindings != null ? "" : "トラッカーの確認はできましたが、割り当てを保存する部品（TrackerBindingService）がありません");
         }
 
         /// <summary>トラッカーの割り当てを付け替える（前半の部位 → 後半の部位）。トラッカーは体の上で同じように付け替える。</summary>
@@ -707,15 +976,14 @@ namespace ExtraLimb.Experiment
 
         // ---- 課題 ----
 
-        /// <summary>読み込んだ条件の課題を始める（Enter）：案内 → カウントダウン → 前半 → 案内 → カウントダウン → 後半。</summary>
+        /// <summary>
+        /// 読み込んだ条件の課題を始める（Enter）：参加者が止まるのを待って Re-center → 案内 → カウントダウン → 前半 → 案内 → カウントダウン → 後半。
+        /// 始められないとき（CanStart）は理由を出して断る。
+        /// </summary>
         public bool StartTrial()
         {
-            if (!RequireExperiment()) return false;
-            if (phase != TrialPhase.Ready)
-                return Fail(phase == TrialPhase.Idle ? "先に条件を読み込んでください（次へ：PgDn）" :
-                    IsRunning ? "課題の途中です" : "この条件は終わっています（やり直しは R、次へは PgDn）");
-            if (Current == null) return Fail("条件を読み込んでいません");
-            BeginTrial(false);
+            if (!CanStart(out string reason)) return Fail(reason);
+            BeginSettle(false);
             return true;
         }
 
@@ -724,9 +992,134 @@ namespace ExtraLimb.Experiment
         {
             if (IsRunning) return Fail("課題の途中です");
             if (phase == TrialPhase.Rating) return Fail("口頭評価を入れてから");
+            if (trackerCheck.IsActive) return Fail("トラッカーの確認の途中です");
+            var problems = new List<string>();
+            AddTrackingProblems(problems);
+            if (problems.Count > 0) return Fail(string.Join("\n", problems));
             phaseBeforePractice = phase;
-            BeginTrial(true);
+            BeginSettle(true);
             return true;
+        }
+
+        /// <summary>
+        /// 今の条件の課題を始められるか（2026-11-15）。体の寸法を入れてあり、そのブロックの部位のトラッカーを確認してあり、
+        /// 動かしている追加肢の入力を追跡できていること。始められなければ、理由を改行で区切って reason に入れる。
+        /// </summary>
+        public bool CanStart(out string reason)
+        {
+            var problems = new List<string>();
+            if (!IsExperimentMode)
+            {
+                problems.Add("デモモードでは使えません（実験モードに切り替えてください）");
+            }
+            else if (phase != TrialPhase.Ready || Current == null)
+            {
+                problems.Add(phase == TrialPhase.Idle || Current == null ? "先に条件を読み込んでください（次へ：PgDn）"
+                    : IsRunning ? "課題の途中です" : "この条件は終わっています（やり直しは R、次へは PgDn）");
+            }
+            else
+            {
+                var body = session != null ? session.Body : null;
+                if (body != null && body.IsReady && !body.Calibration.IsCalibrated) problems.Add("身長・肩幅・手の長さを入れて「反映」を押してください");
+                if (trackerCheck.IsActive) problems.Add("トラッカーの確認の途中です");
+                var missing = new List<string>();
+                foreach (var site in TrackerSitesForBlock(Current.block))
+                    if (!IsTrackerSiteDone(site)) missing.Add(BodySiteNames.Japanese(site));
+                if (missing.Count > 0) problems.Add($"トラッカーの確認がまだです（{string.Join("・", missing)}）");
+                AddTrackingProblems(problems);
+            }
+            reason = string.Join("\n", problems);
+            return problems.Count == 0;
+        }
+
+        // 右の追加肢の入力を追跡できていること。左はトラッカーがなくても始められる（左の追加肢は止め、右だけで行う。LeftLimbNote）。
+        // 左右の同じ部位のトラッカーがそろわず、前の向きも記録していなければ、前の向きを記録してもらう
+        void AddTrackingProblems(List<string> problems)
+        {
+            if (session == null) return;
+            foreach (var channel in session.Channels)
+            {
+                if (!channel.Active) continue;
+                if (!channel.IsInputValid)
+                {
+                    if (channel.Side != LimbSide.Left) problems.Add($"{channel.Label}の追加肢：{channel.StatusMessage}");
+                    continue;
+                }
+                if (!channel.Pipeline.BodyFrame.HasForward && !session.HasForwardPair(channel.ReferenceId))
+                    problems.Add($"{channel.Label}の追加肢：前の向きがまだありません（左右の同じ部位のトラッカーがないため自動で求められません）。" +
+                                 $"参加者に前を向いてもらい、Re-center の後に入力の部位を前へ {session.MinForwardGestureMeters * 100f:F0} cm 以上出して F を押してください（一度記録すれば保存されます）");
+            }
+        }
+
+        // ---- 開始の前の待ち（2026-11-15） ----
+
+        void BeginSettle(bool isPractice)
+        {
+            settlePractice = isPractice;
+            settledByHand = false;
+            stillness.Reset();
+            SetPhase(TrialPhase.Settle);
+            ResolveNotice();
+            notice?.Show(FeetPairOnly() ? SettleFeetText : SettleText, 600f);
+            Report(SessionEventTypes.Settle, isPractice ? "practice" : "condition", "start", "", "", "参加者が止まるのを待っています（止まったら Re-center して始めます）");
+            Say("");
+        }
+
+        // 前の向きを膝か足首の組から求めるとき（肩の組がないとき）は、両足をそろえてもらう。左右の組がなければ（右だけ）そろえなくてよい
+        bool FeetPairOnly() => !PairTracked(BodySite.RightShoulder) && (PairTracked(BodySite.RightKnee) || PairTracked(BodySite.RightAnkle));
+
+        bool PairTracked(BodySite rightSite)
+        {
+            var registry = session != null ? session.Registry : null;
+            if (registry == null) return false;
+            var leftSite = BodySites.Mirror(rightSite);
+            if (session.IsSiteHeld(rightSite) || session.IsSiteHeld(leftSite)) return false;
+            foreach (var space in new[] { PoseSpace.Replay, PoseSpace.SteamVR, PoseSpace.Virtual })
+            {
+                var right = registry.FindBySite(rightSite, space);
+                var left = registry.FindBySite(leftSite, space);
+                if (right != null && left != null && right.TryGetPose(out _) && left.TryGetPose(out _)) return true;
+            }
+            return false;
+        }
+
+        void UpdateSettle()
+        {
+            settlePoses.Clear();
+            var registry = session != null ? session.Registry : null;
+            if (session != null && registry != null)
+            {
+                foreach (var channel in session.Channels)
+                {
+                    if (!channel.Active || string.IsNullOrEmpty(channel.InputId)) continue;
+                    // 止めている左の追加肢（トラッカーがない）は待たない
+                    if (channel.Side == LimbSide.Left && !channel.IsInputValid) continue;
+                    var pose = default(Pose);
+                    bool tracked = registry.TryGet(channel.InputId, out var source) && source.TryGetPose(out pose);
+                    settlePoses.Add((channel.InputId, tracked, pose));
+                }
+            }
+            if (settledByHand || stillness.Update(settlePoses, Time.unscaledDeltaTime)) FinishSettle();
+        }
+
+        void FinishSettle()
+        {
+            bool byHand = settledByHand;
+            notice?.Clear();
+            using (session != null ? session.WithOrigin(ChangeOrigins.TrialStart) : default)
+            {
+                if (!byHand) session?.RequestRecenter();
+                Report(SessionEventTypes.Settle, settlePractice ? "practice" : "condition", byHand ? "manual" : "still", "", "",
+                    byHand ? "実験者が Re-center したので始めます" : "参加者が止まったので Re-center して始めます");
+            }
+            // ブロックの最初の開始では、休憩で座り直したのに合わせて円を置き直す
+            if (!settlePractice && IsExperimentMode && Current != null && Current.block != ringBlock)
+            {
+                ResolveTask();
+                task?.Relayout();
+                ringBlock = Current.block;
+            }
+            BeginTrial(settlePractice);
         }
 
         void BeginTrial(bool isPractice)
@@ -738,6 +1131,7 @@ namespace ExtraLimb.Experiment
             hits[0] = hits[1] = null;
             startedAt = Elapsed();
             matchesAtStart = practice || Matches(Current);
+            drivenAtStart = DrivenLimbCount();
             ResolveNotice();
             ResolveTask();
             timeline.Start(Now, timing);
@@ -751,9 +1145,17 @@ namespace ExtraLimb.Experiment
             Say("");
         }
 
-        /// <summary>課題を中止する（Esc）。同じ条件の始め（準備）に戻る。評価の入力中なら評価を捨てる。</summary>
+        /// <summary>課題を中止する（Esc）。同じ条件の始め（準備）に戻る。評価の入力中なら評価を捨てる。開始の前の待ちならやめるだけ。</summary>
         public bool Abort()
         {
+            if (phase == TrialPhase.Settle)
+            {
+                notice?.Clear();
+                Report(SessionEventTypes.Settle, settlePractice ? "practice" : "condition", "abort", "", "", "開始の前の待ちをやめました");
+                SetPhase(settlePractice ? phaseBeforePractice : TrialPhase.Ready);
+                Say("開始をやめました");
+                return true;
+            }
             if (IsRunning)
             {
                 var was = phase;
@@ -792,6 +1194,8 @@ namespace ExtraLimb.Experiment
 
         void Update()
         {
+            if (trackerCheck.IsActive) UpdateTrackerCheck();
+            if (phase == TrialPhase.Settle) UpdateSettle();
             if (timeline.Running) ProcessCues();
         }
 
@@ -983,8 +1387,19 @@ namespace ExtraLimb.Experiment
             for (int i = 0; i < rating.Count; i++) AddCount(rating[i] > 0 ? rating[i] : (int?)null);
             row.Add(recenterRequests)
                 .Add(spec != null && !matchesAtStart ? $"設定が条件と違う：{actual}" : "")
-                .Add(session != null && session.TwoLimbs ? 2 : 1);
+                .Add(session != null && session.TwoLimbs ? 2 : 1)
+                .Add(drivenAtStart);
             recorder.WriteTableRow(ConditionsFileName, ConditionColumns, row);
+        }
+
+        // トラッカーで動かしている追加肢の数（左のトラッカーがなく、左を止めていれば 1）
+        int DrivenLimbCount()
+        {
+            int count = 0;
+            if (session != null)
+                foreach (var channel in session.Channels)
+                    if (channel.Active && channel.IsInputValid) count++;
+            return count;
         }
 
         void AddCount(int? value)
